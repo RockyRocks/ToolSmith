@@ -3,6 +3,55 @@
 #include <stdexcept>
 #include <thread>
 
+namespace {
+
+std::string GetEnvVar(const char* name) {
+#ifdef _MSC_VER
+    char* val = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&val, &len, name) == 0 && val != nullptr) {
+        std::string result(val);
+        free(val);
+        return result;
+    }
+    return "";
+#else
+    const char* val = std::getenv(name);
+    return val ? std::string(val) : "";
+#endif
+}
+
+std::vector<std::string> SplitCsv(const std::string& s) {
+    std::vector<std::string> out;
+    std::string cur;
+    auto flush = [&]() {
+        auto start = cur.find_first_not_of(" \t");
+        auto end = cur.find_last_not_of(" \t");
+        if (start != std::string::npos)
+            out.push_back(cur.substr(start, end - start + 1));
+        cur.clear();
+    };
+    for (char c : s) {
+        if (c == ',') flush();
+        else cur.push_back(c);
+    }
+    if (!cur.empty()) flush();
+    return out;
+}
+
+std::vector<std::string> JsonStringList(const nlohmann::json& data,
+                                        const char* a, const char* b) {
+    std::vector<std::string> out;
+    if (!data.contains(a) || !data[a].is_object()) return out;
+    if (!data[a].contains(b) || !data[a][b].is_array()) return out;
+    for (const auto& v : data[a][b]) {
+        if (v.is_string()) out.push_back(v.get<std::string>());
+    }
+    return out;
+}
+
+}  // namespace
+
 Config Config::LoadFromFile(const std::string& path) {
     Config cfg;
     std::ifstream file(path);
@@ -17,36 +66,29 @@ Config Config::LoadFromEnv() {
     Config cfg;
     cfg.m_Data = nlohmann::json::object();
 
-    auto getEnv = [](const char* name) -> std::string {
-#ifdef _MSC_VER
-        char* val = nullptr;
-        size_t len = 0;
-        if (_dupenv_s(&val, &len, name) == 0 && val != nullptr) {
-            std::string result(val);
-            free(val);
-            return result;
-        }
-        return "";
-#else
-        const char* val = std::getenv(name);
-        return val ? std::string(val) : "";
-#endif
-    };
-
-    std::string port = getEnv("MCP_SERVER_PORT");
+    std::string port = GetEnvVar("MCP_SERVER_PORT");
     if (!port.empty()) cfg.m_Data["server"]["port"] = std::stoi(port);
 
-    std::string litellmUrl = getEnv("MCP_LITELLM_URL");
+    std::string litellmUrl = GetEnvVar("MCP_LITELLM_URL");
     if (!litellmUrl.empty()) cfg.m_Data["litellm"]["base_url"] = litellmUrl;
 
-    std::string model = getEnv("MCP_DEFAULT_MODEL");
+    std::string model = GetEnvVar("MCP_DEFAULT_MODEL");
     if (!model.empty()) cfg.m_Data["litellm"]["default_model"] = model;
 
-    std::string authKey = getEnv("MCP_AUTH_API_KEY");
+    std::string authKey = GetEnvVar("MCP_AUTH_API_KEY");
     if (!authKey.empty()) {
         cfg.m_Data["auth"]["enabled"] = true;
         cfg.m_Data["auth"]["api_key"] = authKey;
     }
+
+    std::string profile = GetEnvVar("TOOLSMITH_PROFILE");
+    if (!profile.empty()) cfg.m_Data["tools"]["profile"] = profile;
+
+    std::string tools = GetEnvVar("TOOLSMITH_TOOLS");
+    if (!tools.empty()) cfg.m_Data["tools"]["pin"] = SplitCsv(tools);
+
+    std::string workspace = GetEnvVar("TOOLSMITH_WORKSPACE");
+    if (!workspace.empty()) cfg.m_Data["workspace"]["root"] = workspace;
 
     return cfg;
 }
@@ -73,10 +115,13 @@ std::string Config::GetDefaultModel() const {
 }
 
 size_t Config::GetThreadPoolSize() const {
+    size_t n = std::thread::hardware_concurrency();
     if (m_Data.contains("thread_pool") && m_Data["thread_pool"].contains("size")) {
-        return m_Data["thread_pool"]["size"].get<size_t>();
+        n = m_Data["thread_pool"]["size"].get<size_t>();
     }
-    return std::thread::hardware_concurrency();
+    if (n == 0) n = 1;
+    if (n > 8) n = 8;
+    return n;
 }
 
 size_t Config::GetMaxRequestBodySize() const {
@@ -126,6 +171,52 @@ std::string Config::GetMcpServersConfigPath() const {
         return m_Data["discovery"]["servers_config"].get<std::string>();
     }
     return "config/mcp_servers.json";
+}
+
+std::string Config::GetToolsProfile() const {
+    if (m_Data.contains("tools") && m_Data["tools"].contains("profile")
+        && m_Data["tools"]["profile"].is_string()) {
+        return m_Data["tools"]["profile"].get<std::string>();
+    }
+    return "auto";
+}
+
+std::vector<std::string> Config::GetToolsEnable() const {
+    return JsonStringList(m_Data, "tools", "enable");
+}
+
+std::vector<std::string> Config::GetToolsDisable() const {
+    return JsonStringList(m_Data, "tools", "disable");
+}
+
+std::vector<std::string> Config::GetToolsPin() const {
+    return JsonStringList(m_Data, "tools", "pin");
+}
+
+bool Config::IsChainingEnabled() const {
+    if (m_Data.contains("tools") && m_Data["tools"].contains("chaining")) {
+        return m_Data["tools"]["chaining"].get<bool>();
+    }
+    return false;
+}
+
+bool Config::AllowCommandSkills() const {
+    if (m_Data.contains("tools") && m_Data["tools"].contains("allow_command_skills")) {
+        return m_Data["tools"]["allow_command_skills"].get<bool>();
+    }
+    return false;
+}
+
+std::string Config::GetWorkspaceRoot() const {
+    if (m_Data.contains("workspace") && m_Data["workspace"].contains("root")
+        && m_Data["workspace"]["root"].is_string()) {
+        return m_Data["workspace"]["root"].get<std::string>();
+    }
+    return "auto";
+}
+
+std::vector<std::string> Config::GetWorkspaceAllow() const {
+    return JsonStringList(m_Data, "workspace", "allow");
 }
 
 const nlohmann::json& Config::GetRaw() const {

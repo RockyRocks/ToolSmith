@@ -107,7 +107,7 @@ void ScriptPluginLoader::StartWatcher(const std::string& pluginsDir,
                         }
                         auto tools = StdioMCPAdapter::DiscoverTools(name, cmd, spawnArgs);
                         for (const auto& tool : tools) {
-                            registry->RegisterCommand(
+                            registry->ReplaceCommand(
                                 tool.m_Name,
                                 std::make_shared<StdioMCPAdapter>(
                                     name, cmd, spawnArgs,
@@ -119,7 +119,7 @@ void ScriptPluginLoader::StartWatcher(const std::string& pluginsDir,
                         auto tools = ScriptPluginAdapter::DiscoverTools(
                             name, runtime, absEntrypoint.string());
                         for (const auto& tool : tools) {
-                            registry->RegisterCommand(
+                            registry->ReplaceCommand(
                                 tool.m_Name,
                                 std::make_shared<ScriptPluginAdapter>(
                                     name, runtime, absEntrypoint.string(), tool));

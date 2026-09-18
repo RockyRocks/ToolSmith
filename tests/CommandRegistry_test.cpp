@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <commands/CommandRegistry.h>
 #include <commands/EchoCommand.h>
+#include <stdexcept>
 
 TEST(CommandRegistryTest, RegisterAndResolve) {
     CommandRegistry reg;
@@ -347,4 +348,42 @@ TEST(CommandRegistryTest, ExecuteWithChaining_MaxDepthExceeded_StopsGracefully) 
     // The "chain" field is still in the returned JSON — we stopped following it,
     // not stripped it
     EXPECT_TRUE(result.contains("chain"));
+}
+
+TEST(CommandRegistryTest, DuplicateRegisterThrows) {
+    CommandRegistry reg;
+    reg.RegisterCommand("echo", CreateEchoCommand());
+    EXPECT_THROW(reg.RegisterCommand("echo", CreateEchoCommand()), std::runtime_error);
+}
+
+TEST(CommandRegistryTest, ReplaceCommandAllowsHotReload) {
+    CommandRegistry reg;
+    reg.RegisterCommand("echo", CreateEchoCommand());
+    EXPECT_NO_THROW(reg.ReplaceCommand("echo", CreateEchoCommand()));
+    EXPECT_TRUE(reg.HasCommand("echo"));
+}
+
+TEST(CommandRegistryTest, AdvertisedFilterHidesInstalledTools) {
+    CommandRegistry reg;
+    reg.RegisterCommand("echo", CreateEchoCommand());
+    reg.RegisterCommand("other", CreateEchoCommand());
+    reg.SetAdvertised({"echo"});
+    auto metadata = reg.ListToolMetadata();
+    ASSERT_EQ(metadata.size(), 1u);
+    EXPECT_EQ(metadata[0].m_Name, "echo");
+    EXPECT_TRUE(reg.HasCommand("other"));
+}
+
+TEST(CommandRegistryTest, ExecuteWithChaining_Disabled_DoesNotFollowChain) {
+    CommandRegistry reg;
+    reg.SetChainingEnabled(false);
+    reg.RegisterCommand("tool_a", std::make_shared<ChainToCommand>("tool_b"));
+    reg.RegisterCommand("tool_b", std::make_shared<FinalResultCommand>());
+
+    nlohmann::json req = {{"command", "tool_a"}, {"payload", nlohmann::json::object()}};
+    auto result = reg.ExecuteWithChaining("tool_a", req);
+
+    EXPECT_EQ(result["status"], "ok");
+    EXPECT_TRUE(result.contains("chain"));
+    EXPECT_FALSE(result.contains("result"));
 }
