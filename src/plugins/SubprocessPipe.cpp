@@ -8,16 +8,25 @@
 
 #ifdef _MSC_VER
 #pragma warning(push, 0)
-#elif defined(__GNUC__) || defined(__clang__)
+#elif defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic ignored "-Wpedantic"
+#elif defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#pragma GCC diagnostic ignored "-Wpedantic"
 #endif
 
 #include <subprocess.h>
 
 #ifdef _MSC_VER
 #pragma warning(pop)
-#elif defined(__GNUC__) || defined(__clang__)
+#elif defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
 

@@ -1,25 +1,10 @@
 #include <core/Config.h>
+#include <core/Env.h>
 #include <fstream>
 #include <stdexcept>
 #include <thread>
 
 namespace {
-
-std::string GetEnvVar(const char* name) {
-#ifdef _MSC_VER
-    char* val = nullptr;
-    size_t len = 0;
-    if (_dupenv_s(&val, &len, name) == 0 && val != nullptr) {
-        std::string result(val);
-        free(val);
-        return result;
-    }
-    return "";
-#else
-    const char* val = std::getenv(name);
-    return val ? std::string(val) : "";
-#endif
-}
 
 std::vector<std::string> SplitCsv(const std::string& s) {
     std::vector<std::string> out;
