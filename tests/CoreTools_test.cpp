@@ -97,12 +97,15 @@ TEST_F(CoreToolsTest, ReadBinaryFails) {
 }
 
 TEST_F(CoreToolsTest, ReadOutsideJailIsFlagged) {
-    auto r = Call("read", {{"path", "/etc/passwd"}});
+    auto outside = fs::temp_directory_path() / "ts_core_outside_read.txt";
+    std::ofstream(outside) << "secret_outside\n";
+    auto r = Call("read", {{"path", outside.string()}});
     if (r["status"] == "ok") {
         EXPECT_TRUE(r.value("outside_workspace", false));
     } else {
         EXPECT_EQ(r["status"], "error");
     }
+    fs::remove(outside);
 }
 
 TEST_F(CoreToolsTest, EditStaleHashWritesNothing) {
@@ -183,8 +186,12 @@ TEST_F(CoreToolsTest, SearchReturnsSnippetsNotBodies) {
 }
 
 TEST_F(CoreToolsTest, SearchOutsideJailFails) {
-    auto r = Call("search", {{"pattern", "x"}, {"path", "/tmp"}});
+    auto outsideDir = fs::temp_directory_path() / "ts_core_outside_search";
+    fs::create_directories(outsideDir);
+    std::ofstream(outsideDir / "x.txt") << "needle_outside\n";
+    auto r = Call("search", {{"pattern", "needle_outside"}, {"path", outsideDir.string()}});
     EXPECT_EQ(r["status"], "error");
+    fs::remove_all(outsideDir);
 }
 
 TEST_F(CoreToolsTest, SearchEmptyPatternFails) {
@@ -199,7 +206,12 @@ TEST_F(CoreToolsTest, ShellRunsCommand) {
 }
 
 TEST_F(CoreToolsTest, ShellTimeoutKills) {
-    auto r = Call("shell", {{"command", "sleep 5"}, {"timeout", 1}});
+#ifdef _WIN32
+    const char* hang = "ping -n 8 127.0.0.1 >NUL";
+#else
+    const char* hang = "sleep 5";
+#endif
+    auto r = Call("shell", {{"command", hang}, {"timeout", 1}});
     EXPECT_EQ(r["status"], "error");
     EXPECT_NE(r["error"].get<std::string>().find("timed out"), std::string::npos);
 }

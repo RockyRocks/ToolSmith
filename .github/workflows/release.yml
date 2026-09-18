@@ -28,9 +28,10 @@ jobs:
             cmake_extra: -DBUILD_CSHARP=OFF -DBUILD_DESKTOP_NOTIFICATION_PLUGIN=OFF
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Python (Linux/macOS)
         if: runner.os != 'Windows'
@@ -46,7 +47,7 @@ jobs:
           ${{ matrix.cmake_extra }}
 
       - name: Build
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} -j4
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
 
       - name: Test
         run: ctest --test-dir build --build-config ${{ env.BUILD_TYPE }} --output-on-failure --timeout 120
@@ -83,7 +84,7 @@ jobs:
     needs: build
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

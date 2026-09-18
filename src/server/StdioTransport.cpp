@@ -4,11 +4,11 @@
 #include <skills/SkillEngine.h>
 #include <skills/AgentSkillLoader.h>
 #include <discovery/McpServerRegistry.h>
+#include <core/Env.h>
 #include <core/Logger.h>
 #include <core/ResultBudget.h>
 
 #include <chrono>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -216,7 +216,8 @@ nlohmann::json StdioTransport::HandleToolsList(const nlohmann::json& id) {
     }
 
     nlohmann::json resp = MakeResponse(id, {{"tools", toolsArray}});
-    if (const char* metrics = std::getenv("TOOLSMITH_METRICS"); metrics && metrics[0] == '1') {
+    const std::string metrics = GetEnvVar("TOOLSMITH_METRICS");
+    if (!metrics.empty() && metrics[0] == '1') {
         const std::string dumped = resp.dump();
         Logger::GetInstance().Log("tools_list_bytes=" + std::to_string(dumped.size()));
     }

@@ -27,6 +27,8 @@ include(CMakeFindDependencyMacro)
 # ------------------------------------------------------------------------------
 # json-schema-validator
 # ------------------------------------------------------------------------------
+set(JSON_VALIDATOR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(JSON_VALIDATOR_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
   jsv
   GIT_REPOSITORY https://github.com/pboettch/json-schema-validator.git
@@ -99,6 +101,9 @@ endif()
 # googletest / catch2
 # ------------------------------------------------------------------------------
 if(TEST_FRAMEWORK STREQUAL "GTest")
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+  set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
   FetchContent_Declare(
     googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
@@ -117,7 +122,8 @@ endif()
 # Compiler options
 # ------------------------------------------------------------------------------
 if(MSVC)
-  add_compile_options(/W4 /WX /permissive-)
+  add_compile_options(/W4 /WX /permissive- /utf-8)
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS NOMINMAX)
 else()
   add_compile_options(-Wall -Wextra -Wpedantic -Werror -fdiagnostics-color=always -pipe)
 endif()
@@ -175,7 +181,13 @@ target_include_directories(core PUBLIC
   ${PROJECT_SOURCE_DIR}/include
   "${CMAKE_BINARY_DIR}/generated"
 )
-target_include_directories(core PRIVATE ${subprocess_h_SOURCE_DIR})
+# SYSTEM: vendor headers (macOS 26 deprecates posix_spawn_file_actions_addchdir_np
+# inside subprocess.h; -Werror must not fire on that).
+target_include_directories(core SYSTEM PRIVATE ${subprocess_h_SOURCE_DIR})
+if(NOT MSVC)
+  set_source_files_properties(src/plugins/SubprocessPipe.cpp PROPERTIES
+    COMPILE_FLAGS "-Wno-deprecated-declarations -Wno-unused-function -Wno-pedantic")
+endif()
 target_link_libraries(core PUBLIC
   nlohmann_json::nlohmann_json
   nlohmann_json_schema_validator
@@ -284,6 +296,7 @@ set(TEST_SOURCES
     tests/YamlFrontmatter_test.cpp
     tests/AgentSkillLoader_test.cpp
     tests/CoreTools_test.cpp
+    tests/Env_test.cpp
 )
 
 # Desktop notification plugin tests — cross-platform

@@ -1,4 +1,5 @@
 #include <core/Config.h>
+#include <core/Env.h>
 #include <core/Logger.h>
 #include <core/Version.h>
 #include <core/ProtocolHandler.h>
@@ -41,11 +42,6 @@ namespace fs = std::filesystem;
 
 namespace {
 
-std::string Env(const char* name) {
-    const char* v = std::getenv(name);
-    return v ? std::string(v) : "";
-}
-
 std::string Trim(std::string s) {
     auto a = s.find_first_not_of(" \t");
     auto b = s.find_last_not_of(" \t");
@@ -80,11 +76,11 @@ void PrintUsage() {
 
 std::string HomeDir() {
 #ifdef _WIN32
-    std::string p = Env("USERPROFILE");
-    if (p.empty()) p = Env("HOME");
+    std::string p = GetEnvVar("USERPROFILE");
+    if (p.empty()) p = GetEnvVar("HOME");
     return p;
 #else
-    return Env("HOME");
+    return GetEnvVar("HOME");
 #endif
 }
 
@@ -143,7 +139,7 @@ int main(int argc, char** argv) {
     }
 
     std::string workspace = cliWorkspace;
-    if (workspace.empty()) workspace = Env("TOOLSMITH_WORKSPACE");
+    if (workspace.empty()) workspace = GetEnvVar("TOOLSMITH_WORKSPACE");
     if (workspace.empty() || workspace == "auto") workspace = config.GetWorkspaceRoot();
     if (workspace.empty() || workspace == "auto") {
         workspace = WorkspaceJail::DetectRoot(fs::current_path()).string();
@@ -162,12 +158,12 @@ int main(int argc, char** argv) {
     }
 
     std::string profile = cliProfile;
-    if (profile.empty()) profile = Env("TOOLSMITH_PROFILE");
+    if (profile.empty()) profile = GetEnvVar("TOOLSMITH_PROFILE");
     if (profile.empty()) profile = config.GetToolsProfile();
 
     std::vector<std::string> pinTools = cliPinTools;
     if (pinTools.empty()) {
-        std::string envTools = Env("TOOLSMITH_TOOLS");
+        std::string envTools = GetEnvVar("TOOLSMITH_TOOLS");
         if (!envTools.empty()) pinTools = SplitCsv(envTools);
         else pinTools = config.GetToolsPin();
     }
