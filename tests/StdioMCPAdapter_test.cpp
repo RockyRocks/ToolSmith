@@ -34,6 +34,18 @@ static const std::string kTestPluginsDir = TEST_PLUGIN_DIR;
 // SubprocessPipe tests
 // ---------------------------------------------------------------------------
 
+TEST(SubprocessPipe, SpawnEcho) {
+#ifdef _WIN32
+    auto pipe = SubprocessPipe::Spawn("cmd.exe", {"/s", "/c", "echo hello_pipe"});
+#else
+    auto pipe = SubprocessPipe::Spawn("/bin/sh", {"-c", "echo hello_pipe"});
+#endif
+    ASSERT_NE(pipe, nullptr);
+    std::string line;
+    ASSERT_TRUE(pipe->ReadLine(line, 5000)) << "no stdout from echo";
+    EXPECT_NE(line.find("hello_pipe"), std::string::npos) << line;
+}
+
 TEST(SubprocessPipe, SpawnAndReadLine) {
     if (!IsPythonAvailable()) GTEST_SKIP() << "Python not available";
 

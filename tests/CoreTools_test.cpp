@@ -28,7 +28,10 @@ protected:
         RegisterCoreTools(reg, rt);
         reg.SetAdvertised(rt->advertised);
     }
-    void TearDown() override { fs::remove_all(root); }
+    void TearDown() override {
+        std::error_code ec;
+        fs::remove_all(root, ec);
+    }
 
     nlohmann::json Call(const std::string& name, const nlohmann::json& payload) {
         nlohmann::json req = {{"command", name}, {"payload", payload}};
@@ -97,15 +100,22 @@ TEST_F(CoreToolsTest, ReadBinaryFails) {
 }
 
 TEST_F(CoreToolsTest, ReadOutsideJailIsFlagged) {
-    auto outside = fs::temp_directory_path() / "ts_core_outside_read.txt";
-    std::ofstream(outside) << "secret_outside\n";
+    auto outside = fs::temp_directory_path()
+                 / ("ts_core_outside_read_" + std::to_string(
+                        std::chrono::steady_clock::now().time_since_epoch().count())
+                    + ".txt");
+    {
+        std::ofstream out(outside);
+        out << "secret_outside\n";
+    }
     auto r = Call("read", {{"path", outside.string()}});
     if (r["status"] == "ok") {
         EXPECT_TRUE(r.value("outside_workspace", false));
     } else {
         EXPECT_EQ(r["status"], "error");
     }
-    fs::remove(outside);
+    std::error_code ec;
+    fs::remove(outside, ec);
 }
 
 TEST_F(CoreToolsTest, EditStaleHashWritesNothing) {
@@ -161,8 +171,14 @@ TEST_F(CoreToolsTest, EditInvalidAnchorFails) {
 }
 
 TEST_F(CoreToolsTest, EditOutsideJailFails) {
-    auto outside = fs::temp_directory_path() / "ts_core_outside.txt";
-    std::ofstream(outside) << "secret\n";
+    auto outside = fs::temp_directory_path()
+                 / ("ts_core_outside_" + std::to_string(
+                        std::chrono::steady_clock::now().time_since_epoch().count())
+                    + ".txt");
+    {
+        std::ofstream out(outside);
+        out << "secret\n";
+    }
     auto r = Call("edit", {
         {"path", outside.string()},
         {"hunks", nlohmann::json::array({
@@ -170,10 +186,13 @@ TEST_F(CoreToolsTest, EditOutsideJailFails) {
         })}
     });
     EXPECT_EQ(r["status"], "error");
-    std::ifstream in(outside);
-    std::string got((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    EXPECT_NE(got.find("secret"), std::string::npos);
-    fs::remove(outside);
+    {
+        std::ifstream in(outside);
+        std::string got((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        EXPECT_NE(got.find("secret"), std::string::npos);
+    }
+    std::error_code ec;
+    fs::remove(outside, ec);
 }
 
 TEST_F(CoreToolsTest, SearchReturnsSnippetsNotBodies) {
@@ -186,12 +205,18 @@ TEST_F(CoreToolsTest, SearchReturnsSnippetsNotBodies) {
 }
 
 TEST_F(CoreToolsTest, SearchOutsideJailFails) {
-    auto outsideDir = fs::temp_directory_path() / "ts_core_outside_search";
+    auto outsideDir = fs::temp_directory_path()
+                    / ("ts_core_outside_search_" + std::to_string(
+                           std::chrono::steady_clock::now().time_since_epoch().count()));
     fs::create_directories(outsideDir);
-    std::ofstream(outsideDir / "x.txt") << "needle_outside\n";
+    {
+        std::ofstream out(outsideDir / "x.txt");
+        out << "needle_outside\n";
+    }
     auto r = Call("search", {{"pattern", "needle_outside"}, {"path", outsideDir.string()}});
     EXPECT_EQ(r["status"], "error");
-    fs::remove_all(outsideDir);
+    std::error_code ec;
+    fs::remove_all(outsideDir, ec);
 }
 
 TEST_F(CoreToolsTest, SearchEmptyPatternFails) {
@@ -201,19 +226,24 @@ TEST_F(CoreToolsTest, SearchEmptyPatternFails) {
 
 TEST_F(CoreToolsTest, ShellRunsCommand) {
     auto r = Call("shell", {{"command", "echo hello_from_core"}});
-    EXPECT_EQ(r["status"], "ok");
-    EXPECT_NE(r["content"].get<std::string>().find("hello_from_core"), std::string::npos);
+    ASSERT_EQ(r["status"], "ok") << r.dump();
+    ASSERT_TRUE(r["content"].is_string()) << r.dump();
+    EXPECT_NE(r["content"].get<std::string>().find("hello_from_core"), std::string::npos)
+        << r.dump();
 }
 
 TEST_F(CoreToolsTest, ShellTimeoutKills) {
 #ifdef _WIN32
-    const char* hang = "ping -n 8 127.0.0.1 >NUL";
+    // timeout.exe cannot be used: it exits immediately when stdin is a pipe.
+    const char* hang = "ping -n 8 127.0.0.1";
 #else
     const char* hang = "sleep 5";
 #endif
     auto r = Call("shell", {{"command", hang}, {"timeout", 1}});
-    EXPECT_EQ(r["status"], "error");
-    EXPECT_NE(r["error"].get<std::string>().find("timed out"), std::string::npos);
+    ASSERT_EQ(r["status"], "error") << r.dump();
+    ASSERT_TRUE(r["error"].is_string()) << r.dump();
+    EXPECT_NE(r["error"].get<std::string>().find("timed out"), std::string::npos)
+        << r.dump();
 }
 
 TEST_F(CoreToolsTest, ShellEmptyCommandFails) {
