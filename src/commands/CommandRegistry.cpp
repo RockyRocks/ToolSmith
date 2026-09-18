@@ -1,5 +1,6 @@
 #include <commands/CommandRegistry.h>
 #include <core/Logger.h>
+#include <core/ResultBudget.h>
 #include <stdexcept>
 
 void CommandRegistry::RegisterCommand(const std::string& name,
@@ -8,16 +9,28 @@ void CommandRegistry::RegisterCommand(const std::string& name,
         throw std::invalid_argument("Command name cannot be empty");
     }
     std::unique_lock lock(m_Mutex);
-    auto it = m_Commands.find(name);
-    if (it != m_Commands.end()) {
-        Logger::GetInstance().Log(
-            "[CommandRegistry] Tool '" + name + "' already registered — overwriting");
-        auto old = std::move(it->second);
-        lock.unlock();
-        old->Shutdown();
-        lock.lock();
+    if (m_Commands.count(name)) {
+        throw std::runtime_error(
+            "Tool name collision: '" + name + "' is already registered");
     }
     m_Commands[name] = std::move(command);
+}
+
+void CommandRegistry::ReplaceCommand(const std::string& name,
+                                     std::shared_ptr<ICommandStrategy> command) {
+    if (name.empty()) {
+        throw std::invalid_argument("Command name cannot be empty");
+    }
+    std::shared_ptr<ICommandStrategy> old;
+    {
+        std::unique_lock lock(m_Mutex);
+        auto it = m_Commands.find(name);
+        if (it != m_Commands.end()) {
+            old = std::move(it->second);
+        }
+        m_Commands[name] = std::move(command);
+    }
+    if (old) old->Shutdown();
 }
 
 std::shared_ptr<ICommandStrategy> CommandRegistry::Resolve(const std::string& name) const {
@@ -44,6 +57,56 @@ std::vector<std::string> CommandRegistry::ListCommands() const {
     return names;
 }
 
+void CommandRegistry::SetAdvertised(std::unordered_set<std::string> names) {
+    std::unique_lock lock(m_Mutex);
+    m_Advertised = std::move(names);
+    m_FilterAdvertised = true;
+}
+
+void CommandRegistry::ClearAdvertisedFilter() {
+    std::unique_lock lock(m_Mutex);
+    m_Advertised.clear();
+    m_FilterAdvertised = false;
+}
+
+void CommandRegistry::Advertise(const std::string& name) {
+    if (name.empty()) return;
+    std::unique_lock lock(m_Mutex);
+    m_FilterAdvertised = true;
+    m_Advertised.insert(name);
+}
+
+void CommandRegistry::Unadvertise(const std::string& name) {
+    std::unique_lock lock(m_Mutex);
+    m_Advertised.erase(name);
+}
+
+bool CommandRegistry::HasAdvertisedFilter() const {
+    std::shared_lock lock(m_Mutex);
+    return m_FilterAdvertised;
+}
+
+bool CommandRegistry::IsAdvertised(const std::string& name) const {
+    std::shared_lock lock(m_Mutex);
+    if (!m_FilterAdvertised) return true;
+    return m_Advertised.count(name) > 0;
+}
+
+std::unordered_set<std::string> CommandRegistry::AdvertisedNames() const {
+    std::shared_lock lock(m_Mutex);
+    return m_Advertised;
+}
+
+void CommandRegistry::SetChainingEnabled(bool enabled) {
+    std::unique_lock lock(m_Mutex);
+    m_ChainingEnabled = enabled;
+}
+
+bool CommandRegistry::IsChainingEnabled() const {
+    std::shared_lock lock(m_Mutex);
+    return m_ChainingEnabled;
+}
+
 nlohmann::json CommandRegistry::ExecuteWithChaining(
     const std::string& toolName,
     const nlohmann::json& request,
@@ -54,6 +117,13 @@ nlohmann::json CommandRegistry::ExecuteWithChaining(
         return {{"status", "error"}, {"error", "Unknown command: " + toolName}};
 
     nlohmann::json result = cmd->ExecuteAsync(request).get();
+
+    bool chaining;
+    {
+        std::shared_lock lock(m_Mutex);
+        chaining = m_ChainingEnabled;
+    }
+    if (!chaining) return result;
 
     if (depth < kMaxChainDepth
         && result.contains("chain") && result["chain"].is_object())
@@ -80,6 +150,7 @@ std::vector<ToolMetadata> CommandRegistry::ListToolMetadata() const {
     std::vector<ToolMetadata> result;
     result.reserve(m_Commands.size());
     for (const auto& [name, cmd] : m_Commands) {
+        if (m_FilterAdvertised && m_Advertised.count(name) == 0) continue;
         ToolMetadata meta = cmd->GetMetadata();
         if (meta.m_Hidden) continue;
         if (meta.m_Name.empty()) {
@@ -87,6 +158,9 @@ std::vector<ToolMetadata> CommandRegistry::ListToolMetadata() const {
         }
         if (meta.m_Description.empty()) {
             meta.m_Description = "Execute the " + name + " command";
+        }
+        if (meta.m_Description.size() > kDescriptionMaxChars) {
+            meta.m_Description.resize(kDescriptionMaxChars);
         }
         if (meta.m_InputSchema.is_null() || meta.m_InputSchema.empty()) {
             meta.m_InputSchema = {

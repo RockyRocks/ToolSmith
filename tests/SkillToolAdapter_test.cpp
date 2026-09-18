@@ -255,7 +255,7 @@ TEST(SkillToolAdapterTest, CommandSkill_MissingVariable_ReturnsError) {
     EXPECT_NE(result["error"].get<std::string>().find("msg"), std::string::npos);
 }
 
-TEST(SkillToolAdapterTest, CommandSkill_GetMetadata_InjectsRulesIntoDescription) {
+TEST(SkillToolAdapterTest, CommandSkill_GetMetadata_DoesNotInjectRulesIntoDescription) {
     auto provider = std::make_shared<MockLLMProvider>();
     SkillDefinition skill = MakeCommandSkill();
     skill.m_Description = "Base description.";
@@ -264,10 +264,10 @@ TEST(SkillToolAdapterTest, CommandSkill_GetMetadata_InjectsRulesIntoDescription)
     SkillToolAdapter adapter(skill, provider);
     auto meta = adapter.GetMetadata();
 
-    EXPECT_NE(meta.m_Description.find("Base description."), std::string::npos);
-    EXPECT_NE(meta.m_Description.find("Rule alpha"), std::string::npos);
-    EXPECT_NE(meta.m_Description.find("Rule beta"), std::string::npos);
-    EXPECT_NE(meta.m_Description.find("Usage rules:"), std::string::npos);
+    EXPECT_EQ(meta.m_Description, "Base description.");
+    EXPECT_EQ(meta.m_Description.find("Rule alpha"), std::string::npos);
+    EXPECT_EQ(meta.m_Description.find("Rule beta"), std::string::npos);
+    EXPECT_EQ(meta.m_Description.find("Usage rules:"), std::string::npos);
 }
 
 TEST(SkillToolAdapterTest, LlmSkill_GetMetadata_RulesNotInDescription) {

@@ -1,6 +1,7 @@
 #include <skills/SkillToolAdapter.h>
 #include <skills/SkillEngine.h>
 #include <core/Logger.h>
+#include <core/ResultBudget.h>
 
 #include <cstdio>
 #include <sstream>
@@ -187,11 +188,7 @@ ToolMetadata SkillToolAdapter::GetMetadata() const {
     ToolMetadata meta;
     meta.m_Name = m_Def.m_Name;
     std::string desc = m_Def.m_Description;
-    if (m_Def.m_Type == SkillType::Command && !m_Def.m_Rules.empty()) {
-        desc += "\n\nUsage rules:";
-        for (size_t i = 0; i < m_Def.m_Rules.size(); ++i)
-            desc += "\n" + std::to_string(i + 1) + ". " + m_Def.m_Rules[i];
-    }
+    if (desc.size() > kDescriptionMaxChars) desc.resize(kDescriptionMaxChars);
     meta.m_Description = std::move(desc);
     meta.m_InputSchema = std::move(schema);
     meta.m_DefaultModel = m_Def.m_DefaultModel;

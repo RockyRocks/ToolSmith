@@ -3,6 +3,7 @@
 #include <string>
 #include <cstdlib>
 #include <fstream>
+#include <vector>
 
 class Config {
 public:
@@ -20,8 +21,20 @@ public:
     std::string GetSkillsDirectory() const;
     std::string GetPluginsDirectory() const;
     std::string GetMcpServersConfigPath() const;
+
+    /// tools.profile: auto|core|cpp|csharp|fullstack|all (default auto)
+    std::string GetToolsProfile() const;
+    std::vector<std::string> GetToolsEnable() const;
+    std::vector<std::string> GetToolsDisable() const;
+    std::vector<std::string> GetToolsPin() const;
+    /// Default false — ExecuteWithChaining is a no-op wrapper on the server path.
+    bool IsChainingEnabled() const;
+    bool AllowCommandSkills() const;
+    std::string GetWorkspaceRoot() const;
+    std::vector<std::string> GetWorkspaceAllow() const;
+
     const nlohmann::json& GetRaw() const;
 
 private:
-    nlohmann::json m_Data;
+    nlohmann::json m_Data = nlohmann::json::object();
 };
