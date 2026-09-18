@@ -30,7 +30,7 @@ The server integrates directly with [Claude Code](https://claude.ai/code) as a r
 
 ### MCP Tools
 
-Default `--profile auto` (CMake/C# tree → `cpp`/`csharp`/`fullstack`) advertises a small native set:
+Default `--profile auto` (CMake/C# tree → `cpp`/`csharp`/`fullstack`) advertises a small native set (≤ 12 tools):
 
 | Tool | Description |
 | ---- | ----------- |

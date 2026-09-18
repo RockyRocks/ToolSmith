@@ -36,20 +36,20 @@ TEST_F(ToolProfileTest, DetectFullstackWhenBoth) {
     EXPECT_EQ(ToolProfile::Detect(root.string()), "fullstack");
 }
 
-TEST(ToolProfileTest, NormalizeUnknownIsEmpty) {
+TEST_F(ToolProfileTest, NormalizeUnknownIsEmpty) {
     EXPECT_TRUE(ToolProfile::Normalize("nope").empty());
     EXPECT_EQ(ToolProfile::Normalize("CPP"), "cpp");
     EXPECT_EQ(ToolProfile::Normalize(""), "auto");
 }
 
-TEST(ToolProfileTest, ResolveUnknownProfileFails) {
+TEST_F(ToolProfileTest, ResolveUnknownProfileFails) {
     ToolProfile::ResolveInput in;
     in.profile = "fortran";
     auto out = ToolProfile::Resolve(in);
     EXPECT_FALSE(out.error.empty());
 }
 
-TEST(ToolProfileTest, ResolveUnknownPackFails) {
+TEST_F(ToolProfileTest, ResolveUnknownPackFails) {
     ToolProfile::ResolveInput in;
     in.profile = "core";
     in.enable = {"not-a-pack"};
@@ -57,7 +57,7 @@ TEST(ToolProfileTest, ResolveUnknownPackFails) {
     EXPECT_NE(out.error.find("Unknown pack"), std::string::npos);
 }
 
-TEST(ToolProfileTest, ResolveUnknownToolPinFails) {
+TEST_F(ToolProfileTest, ResolveUnknownToolPinFails) {
     ToolProfile::ResolveInput in;
     in.profile = "cpp";
     in.pinTools = {"not_a_tool"};
@@ -65,7 +65,7 @@ TEST(ToolProfileTest, ResolveUnknownToolPinFails) {
     EXPECT_NE(out.error.find("Unknown tool"), std::string::npos);
 }
 
-TEST(ToolProfileTest, ResolveEmptyToolNameFails) {
+TEST_F(ToolProfileTest, ResolveEmptyToolNameFails) {
     ToolProfile::ResolveInput in;
     in.profile = "core";
     in.pinTools = {""};
@@ -73,9 +73,9 @@ TEST(ToolProfileTest, ResolveEmptyToolNameFails) {
     EXPECT_NE(out.error.find("Empty tool"), std::string::npos);
 }
 
-TEST(ToolProfileTest, CppAdvertisesElevenTools) {
+TEST_F(ToolProfileTest, CppAdvertisesLanguageSet) {
     auto tools = ToolProfile::ToolsForProfile("cpp");
-    EXPECT_EQ(tools.size(), 11u);
+    EXPECT_EQ(tools.size(), 12u);
     EXPECT_TRUE(tools.count("read"));
     EXPECT_TRUE(tools.count("git"));
     EXPECT_TRUE(tools.count("diagnose"));
@@ -83,13 +83,13 @@ TEST(ToolProfileTest, CppAdvertisesElevenTools) {
     EXPECT_FALSE(tools.count("llm"));
 }
 
-TEST(ToolProfileTest, CoreDoesNotIncludeGit) {
+TEST_F(ToolProfileTest, CoreDoesNotIncludeGit) {
     auto tools = ToolProfile::ToolsForProfile("core");
     EXPECT_EQ(tools.size(), 8u);
     EXPECT_FALSE(tools.count("git"));
 }
 
-TEST(ToolProfileTest, EnableSkillsAddsTools) {
+TEST_F(ToolProfileTest, EnableSkillsAddsTools) {
     ToolProfile::ResolveInput in;
     in.profile = "core";
     in.enable = {"skills"};
@@ -99,7 +99,7 @@ TEST(ToolProfileTest, EnableSkillsAddsTools) {
     EXPECT_TRUE(out.advertised.count("skill"));
 }
 
-TEST(ToolProfileTest, PinReplacesAdvertisedSet) {
+TEST_F(ToolProfileTest, PinReplacesAdvertisedSet) {
     ToolProfile::ResolveInput in;
     in.profile = "cpp";
     in.pinTools = {"read", "edit"};
@@ -109,7 +109,7 @@ TEST(ToolProfileTest, PinReplacesAdvertisedSet) {
     EXPECT_FALSE(out.advertised.count("git"));
 }
 
-TEST(ToolProfileTest, OptionalPacksNeverAutoEnable) {
+TEST_F(ToolProfileTest, OptionalPacksNeverAutoEnable) {
     EXPECT_TRUE(ToolProfile::IsOptionalPack("jira"));
     EXPECT_TRUE(ToolProfile::IsOptionalPack("github"));
     EXPECT_TRUE(ToolProfile::IsOptionalPack("skills"));
@@ -117,7 +117,7 @@ TEST(ToolProfileTest, OptionalPacksNeverAutoEnable) {
     EXPECT_FALSE(tools.count("jira"));
 }
 
-TEST(ToolProfileTest, ProfileAllLoadPlugins) {
+TEST_F(ToolProfileTest, ProfileAllLoadPlugins) {
     ToolProfile::ResolveInput in;
     in.profile = "all";
     auto out = ToolProfile::Resolve(in);

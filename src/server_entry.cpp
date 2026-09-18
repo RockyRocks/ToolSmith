@@ -126,6 +126,13 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (stdioMode) {
+        Logger::GetInstance().SetSuppressStdout(true);
+        Logger::GetInstance().SetObserver([](const std::string& msg) {
+            std::cerr << "[LOG] " << msg << std::endl;
+        });
+    }
+
     Config config;
     try {
         config = Config::LoadFromFile(configPath);
