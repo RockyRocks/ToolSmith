@@ -39,7 +39,8 @@ SubprocessPipe::~SubprocessPipe() {
 }
 
 std::unique_ptr<SubprocessPipe> SubprocessPipe::Spawn(
-    const std::string& command, const std::vector<std::string>& args)
+    const std::string& command, const std::vector<std::string>& args,
+    bool combineStderr)
 {
     std::vector<const char*> cmdLine;
     cmdLine.push_back(command.c_str());
@@ -49,7 +50,11 @@ std::unique_ptr<SubprocessPipe> SubprocessPipe::Spawn(
 
     int options = subprocess_option_search_user_path
                 | subprocess_option_enable_async
+                | subprocess_option_enable_async_no_wait
                 | subprocess_option_inherit_environment;
+    if (combineStderr) {
+        options |= subprocess_option_combined_stdout_stderr;
+    }
 #ifdef _WIN32
     options |= subprocess_option_no_window;
 #endif

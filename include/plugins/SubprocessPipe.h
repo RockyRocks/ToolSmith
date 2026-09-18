@@ -6,7 +6,8 @@
 class SubprocessPipe {
 public:
     static std::unique_ptr<SubprocessPipe> Spawn(
-        const std::string& command, const std::vector<std::string>& args);
+        const std::string& command, const std::vector<std::string>& args,
+        bool combineStderr = false);
 
     bool WriteLine(const std::string& line);
     bool ReadLine(std::string& line, int timeoutMs);

@@ -90,7 +90,7 @@ ProcResult RunProc(const std::string& exe, const std::vector<std::string>& args,
     ProcResult r;
     std::unique_ptr<SubprocessPipe> proc;
     try {
-        proc = SubprocessPipe::Spawn(exe, args);
+        proc = SubprocessPipe::Spawn(exe, args, true);
     } catch (const std::exception& e) {
         r.output = e.what();
         return r;

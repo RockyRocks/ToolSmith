@@ -137,7 +137,7 @@ TEST_F(AgentSkillLoaderTest, LoadBodyReturnsMarkdown) {
     EXPECT_NE(body.body.find("Be thorough."), std::string::npos);
 }
 
-TEST(AgentSkillLoaderTest, IsSpecSkillNameRules) {
+TEST_F(AgentSkillLoaderTest, IsSpecSkillNameRules) {
     EXPECT_TRUE(IsSpecSkillName("code-review"));
     EXPECT_TRUE(IsSpecSkillName("a1"));
     EXPECT_FALSE(IsSpecSkillName("my_skill"));

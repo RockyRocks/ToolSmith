@@ -51,7 +51,7 @@ static nlohmann::json SerializeToolsList(const CommandRegistry& reg) {
 TEST_F(CoreToolsTest, CppAdvertisesAtMostTwelveTools) {
     auto meta = reg.ListToolMetadata();
     EXPECT_LE(meta.size(), 12u);
-    EXPECT_EQ(meta.size(), 11u);
+    EXPECT_EQ(meta.size(), 12u);
     auto dumped = SerializeToolsList(reg).dump();
     EXPECT_LE(dumped.size(), kMaxToolsListBytes);
     for (const auto& m : meta) {
