@@ -86,11 +86,26 @@ struct ProcResult {
     bool started = false;
 };
 
-ProcResult RunProc(const std::string& exe, const std::vector<std::string>& args, int timeoutSec) {
+std::string PathUtf8(const fs::path& p) {
+    auto u8 = p.u8string();
+    return std::string(u8.begin(), u8.end());
+}
+
+void AppendLines(SubprocessPipe& proc, std::string& output, int waitMs) {
+    std::string line;
+    while (proc.ReadLine(line, waitMs)) {
+        output += line;
+        output += '\n';
+        if (output.size() > kMaxResultBytes * 4) break;
+    }
+}
+
+ProcResult RunProc(const std::string& exe, const std::vector<std::string>& args,
+                   int timeoutSec, const std::string& cwd = {}) {
     ProcResult r;
     std::unique_ptr<SubprocessPipe> proc;
     try {
-        proc = SubprocessPipe::Spawn(exe, args, true);
+        proc = SubprocessPipe::Spawn(exe, args, true, cwd);
     } catch (const std::exception& e) {
         r.output = e.what();
         return r;
@@ -98,20 +113,19 @@ ProcResult RunProc(const std::string& exe, const std::vector<std::string>& args,
     r.started = true;
     const auto deadline = std::chrono::steady_clock::now()
                         + std::chrono::seconds(timeoutSec);
-    std::string line;
     while (std::chrono::steady_clock::now() < deadline) {
-        if (proc->ReadLine(line, 200)) {
-            r.output += line;
-            r.output += '\n';
-            if (r.output.size() > kMaxResultBytes * 4) break;
-        } else if (!proc->IsRunning()) {
-            break;
-        }
+        const size_t before = r.output.size();
+        AppendLines(*proc, r.output, 200);
+        if (r.output.size() > kMaxResultBytes * 4) break;
+        if (!proc->IsRunning()) break;
+        if (r.output.size() == before)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     if (proc->IsRunning()) {
         proc->Kill();
         r.timedOut = true;
     }
+    AppendLines(*proc, r.output, 50);
     r.output = StripAnsi(std::move(r.output));
     return r;
 }
@@ -344,18 +358,13 @@ public:
         if (!resolved.ok()) return Ready(Err(resolved.error));
         int timeout = ClampInt(p.value("timeout", kShellTimeoutDefaultSec), 1,
                                kShellTimeoutMaxSec, kShellTimeoutDefaultSec);
+        const std::string cwd = PathUtf8(resolved.path);
 #ifdef _WIN32
-        std::string wrapped = "cd /d \"" + resolved.path.string() + "\" && " + command;
-        auto proc = RunProc("cmd.exe", {"/c", wrapped}, timeout);
+        // cwd is passed to CreateProcess. Do not wrap `cd /d ... &&` — subprocess.h
+        // re-quotes args with spaces and cmd.exe then strips quotes incorrectly.
+        auto proc = RunProc("cmd.exe", {"/s", "/c", command}, timeout, cwd);
 #else
-        std::string root = resolved.path.string();
-        std::string escaped;
-        for (char c : root) {
-            if (c == '\'') escaped += "'\\''";
-            else escaped += c;
-        }
-        std::string wrapped = "cd '" + escaped + "' && " + command;
-        auto proc = RunProc("/bin/sh", {"-c", wrapped}, timeout);
+        auto proc = RunProc("/bin/sh", {"-c", command}, timeout, cwd);
 #endif
         if (!proc.started) return Ready(Err("Failed to start shell: " + proc.output));
         bool trunc = false;
