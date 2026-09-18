@@ -16,6 +16,7 @@
 class CommandRegistry;
 class SkillEngine;
 class McpServerRegistry;
+struct CoreRuntime;
 
 /// Implements MCP protocol (JSON-RPC 2.0) over stdio transport.
 /// Reads newline-delimited JSON-RPC messages from an input stream,
@@ -32,6 +33,9 @@ public:
         const std::string& serverName = "toolsmith",
         const std::string& serverVersion = "1.0.0"
     );
+
+    /// Optional core runtime for skill:// resources and advertised-pack checks.
+    void SetCoreRuntime(std::shared_ptr<CoreRuntime> runtime);
 
     /// Blocking read loop. Returns when input stream reaches EOF or Stop() is called.
     void Run();
@@ -82,6 +86,7 @@ private:
     std::shared_ptr<CommandRegistry> m_Registry;
     std::shared_ptr<SkillEngine> m_SkillEngine;
     std::shared_ptr<McpServerRegistry> m_McpRegistry;
+    std::shared_ptr<CoreRuntime> m_CoreRuntime;
     std::istream& m_Input;
     std::ostream& m_Output;
     std::string m_ServerName;

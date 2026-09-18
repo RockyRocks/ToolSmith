@@ -30,12 +30,22 @@ The server integrates directly with [Claude Code](https://claude.ai/code) as a r
 
 ### MCP Tools
 
+Default `--profile auto` (CMake/C# tree → `cpp`/`csharp`/`fullstack`) advertises a small native set:
+
 | Tool | Description |
 | ---- | ----------- |
-| `echo` | Simple echo for connectivity testing |
-| `llm` | LLM completion via a LiteLLM proxy (multi-provider: OpenAI, Anthropic, etc.) |
-| `skill` | Prompt-template engine — loads JSON skill definitions with `{{variable}}` interpolation |
-| `remote` | Composite command that delegates calls to other registered MCP servers |
+| `read` | File as `LINE\|HASH\|text` (default 200 lines, cap 500) |
+| `edit` | Hashline hunks; stale hashes write nothing |
+| `search` | Workspace-jailed `path:line:` snippets |
+| `shell` | One foreground command in the jail (30s default) |
+| `project` | Compact language/toolchain snapshot |
+| `git` | Read-only status/diff/log/blame/conflicts (language profiles) |
+| `build` / `test` / `diagnose` | Compact compiler/test output (language profiles) |
+| `catalog` / `activate` / `deactivate` | Opt-in packs (`skills`, `llm`, `jira`, …) |
+
+`echo`, `llm`, `remote`, JSON skills, and script plugins are **not** in the default advertised set. Use `--profile all` for the previous full list, or `catalog` + `activate`. Agent Skills live under `.agents/skills/<name>/SKILL.md` ([spec](https://agentskills.io/specification)).
+
+CLI: `--stdio --profile cpp --tools read,edit,search --workspace PATH`. Env: `TOOLSMITH_PROFILE`, `TOOLSMITH_TOOLS`, `TOOLSMITH_WORKSPACE`.
 
 ### Dual Transport
 

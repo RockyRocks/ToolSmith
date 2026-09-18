@@ -35,3 +35,40 @@ TEST(ConfigTest, LoadFromFile) {
 TEST(ConfigTest, MissingFileThrows) {
     EXPECT_THROW(Config::LoadFromFile("nonexistent.json"), std::runtime_error);
 }
+
+TEST(ConfigTest, ToolsDefaultsAreLean) {
+    Config cfg;
+    EXPECT_EQ(cfg.GetToolsProfile(), "auto");
+    EXPECT_TRUE(cfg.GetToolsEnable().empty());
+    EXPECT_TRUE(cfg.GetToolsDisable().empty());
+    EXPECT_FALSE(cfg.IsChainingEnabled());
+    EXPECT_FALSE(cfg.AllowCommandSkills());
+    EXPECT_EQ(cfg.GetWorkspaceRoot(), "auto");
+}
+
+TEST(ConfigTest, LoadToolsAndWorkspaceFromFile) {
+    std::string path = "test_config_tools_tmp.json";
+    {
+        std::ofstream f(path);
+        f << R"({
+            "tools": {
+                "profile": "cpp",
+                "enable": ["skills"],
+                "disable": ["llm"],
+                "chaining": true
+            },
+            "workspace": {"root": "/tmp", "allow": ["/opt/sdk"]}
+        })";
+    }
+    Config cfg = Config::LoadFromFile(path);
+    EXPECT_EQ(cfg.GetToolsProfile(), "cpp");
+    ASSERT_EQ(cfg.GetToolsEnable().size(), 1u);
+    EXPECT_EQ(cfg.GetToolsEnable()[0], "skills");
+    ASSERT_EQ(cfg.GetToolsDisable().size(), 1u);
+    EXPECT_EQ(cfg.GetToolsDisable()[0], "llm");
+    EXPECT_TRUE(cfg.IsChainingEnabled());
+    EXPECT_EQ(cfg.GetWorkspaceRoot(), "/tmp");
+    ASSERT_EQ(cfg.GetWorkspaceAllow().size(), 1u);
+    EXPECT_EQ(cfg.GetWorkspaceAllow()[0], "/opt/sdk");
+    std::remove(path.c_str());
+}

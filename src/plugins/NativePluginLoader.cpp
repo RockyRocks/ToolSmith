@@ -3,6 +3,7 @@
 #include <plugins/NativePluginAdapter.h>
 #include <core/Logger.h>
 
+#include <exception>
 #include <filesystem>
 #include <set>
 #include <unordered_set>
@@ -200,9 +201,13 @@ void NativePluginLoader::StartWatcher(const std::string& pluginsDir,
 
                     Logger::GetInstance().Log(
                         "[NativePlugin] watcher detected new plugin: " + path);
-
-                    if (LoadOne(path, *registry, "runtime")) {
-                        loaded.insert(path);
+                    try {
+                        if (LoadOne(path, *registry, "runtime")) {
+                            loaded.insert(path);
+                        }
+                    } catch (const std::exception& e) {
+                        Logger::GetInstance().Log(
+                            std::string("[NativePlugin] watcher load failed: ") + e.what());
                     }
                 }
             }

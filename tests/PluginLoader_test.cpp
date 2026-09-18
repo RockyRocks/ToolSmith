@@ -114,6 +114,42 @@ TEST(PluginLoaderTest, ParseSkillMdWindowsLineEndings) {
     EXPECT_EQ(skill.m_Description, "Windows style");
 }
 
+TEST(PluginLoaderTest, ParseSkillMdUnquotedColonInDescription) {
+    std::string content = R"(---
+name: code-review
+description: Use when: the user asks for a review
+---
+
+Review the code.
+)";
+    auto skill = PluginLoader::ParseSkillMd(content);
+    EXPECT_EQ(skill.m_Name, "code-review");
+    EXPECT_EQ(skill.m_Description, "Use when: the user asks for a review");
+}
+
+TEST(PluginLoaderTest, ParseSkillMdMetadataMap) {
+    std::string content = R"(---
+name: mapped
+description: Has metadata
+metadata:
+  author: rakesh
+  version: 1
+---
+
+Body.
+)";
+    auto skill = PluginLoader::ParseSkillMd(content);
+    EXPECT_EQ(skill.m_Name, "mapped");
+    EXPECT_EQ(skill.m_Description, "Has metadata");
+}
+
+TEST(PluginLoaderTest, ParseSkillMdUtf8Bom) {
+    std::string content = "\xEF\xBB\xBF---\nname: bom-skill\ndescription: Has BOM\n---\n\nBody.\n";
+    auto skill = PluginLoader::ParseSkillMd(content);
+    EXPECT_EQ(skill.m_Name, "bom-skill");
+    EXPECT_EQ(skill.m_Description, "Has BOM");
+}
+
 // ---------------------------------------------------------------------------
 // LoadIntoEngine filesystem tests
 // ---------------------------------------------------------------------------

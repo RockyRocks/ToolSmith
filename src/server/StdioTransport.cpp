@@ -1,12 +1,17 @@
 #include <server/StdioTransport.h>
 #include <commands/CommandRegistry.h>
+#include <commands/CoreTools.h>
 #include <skills/SkillEngine.h>
+#include <skills/AgentSkillLoader.h>
 #include <discovery/McpServerRegistry.h>
 #include <core/Logger.h>
+#include <core/ResultBudget.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <thread>
 
@@ -42,6 +47,13 @@ StdioTransport::StdioTransport(
 {
     std::error_code ec;
     m_ResourceRoot = std::filesystem::current_path(ec).string();
+}
+
+void StdioTransport::SetCoreRuntime(std::shared_ptr<CoreRuntime> runtime) {
+    m_CoreRuntime = std::move(runtime);
+    if (m_CoreRuntime) {
+        m_ResourceRoot = m_CoreRuntime->jail.Root().string();
+    }
 }
 
 void StdioTransport::Run() {
@@ -178,7 +190,7 @@ nlohmann::json StdioTransport::HandleInitialize(
     nlohmann::json result = {
         {"protocolVersion", MCP_PROTOCOL_VERSION},
         {"capabilities", {
-            {"tools", nlohmann::json::object()},
+            {"tools", {{"listChanged", true}}},
             {"prompts", nlohmann::json::object()},
             {"resources", {{"subscribe", true}}}
         }},
@@ -203,7 +215,12 @@ nlohmann::json StdioTransport::HandleToolsList(const nlohmann::json& id) {
         });
     }
 
-    return MakeResponse(id, {{"tools", toolsArray}});
+    nlohmann::json resp = MakeResponse(id, {{"tools", toolsArray}});
+    if (const char* metrics = std::getenv("TOOLSMITH_METRICS"); metrics && metrics[0] == '1') {
+        const std::string dumped = resp.dump();
+        Logger::GetInstance().Log("tools_list_bytes=" + std::to_string(dumped.size()));
+    }
+    return resp;
 }
 
 nlohmann::json StdioTransport::HandleToolsCall(
@@ -466,6 +483,17 @@ nlohmann::json StdioTransport::HandleResourcesList(
     namespace fs = std::filesystem;
     nlohmann::json resources = nlohmann::json::array();
 
+    if (m_CoreRuntime && m_Registry && m_Registry->IsAdvertised("skills")) {
+        for (const auto& skill : m_CoreRuntime->skills.skills) {
+            resources.push_back({
+                {"uri", "skill://" + skill.m_Name},
+                {"name", skill.m_Name},
+                {"description", skill.m_Description},
+                {"mimeType", "text/markdown"}
+            });
+        }
+    }
+
     if (m_ResourceRoot.empty()) {
         return MakeResponse(id, {{"resources", resources}});
     }
@@ -511,6 +539,58 @@ nlohmann::json StdioTransport::HandleResourcesRead(
     }
 
     std::string uri = params["uri"].get<std::string>();
+
+    if (uri.rfind("skill://", 0) == 0) {
+        if (!m_CoreRuntime || !m_Registry || !m_Registry->IsAdvertised("skills")) {
+            return MakeError(id, JSONRPC_INVALID_PARAMS,
+                             "skills pack is not advertised; call activate pack=skills");
+        }
+        std::string rest = uri.substr(8);
+        auto slash = rest.find('/');
+        std::string name = slash == std::string::npos ? rest : rest.substr(0, slash);
+        std::string rel = slash == std::string::npos ? "" : rest.substr(slash + 1);
+        if (rel.empty()) {
+            auto body = LoadAgentSkillBody(m_CoreRuntime->skills, name);
+            if (!body.error.empty()) {
+                return MakeError(id, JSONRPC_INVALID_PARAMS, body.error);
+            }
+            bool trunc = false;
+            std::string text = CapHead(body.body, trunc);
+            (void)trunc;
+            return MakeResponse(id, {{"contents", nlohmann::json::array({
+                {{"uri", uri}, {"mimeType", "text/markdown"}, {"text", text}}
+            })}});
+        }
+        namespace fs = std::filesystem;
+        fs::path skillRoot;
+        for (const auto& s : m_CoreRuntime->skills.skills) {
+            if (s.m_Name == name) { skillRoot = s.m_Root; break; }
+        }
+        if (skillRoot.empty()) {
+            return MakeError(id, JSONRPC_INVALID_PARAMS, "Unknown skill: " + name);
+        }
+        std::error_code ec;
+        fs::path full = fs::weakly_canonical(skillRoot / rel, ec);
+        fs::path root = fs::weakly_canonical(skillRoot, ec);
+        auto relative = full.lexically_relative(root);
+        bool outside = relative.empty();
+        for (const auto& part : relative) if (part == "..") outside = true;
+        if (outside) {
+            return MakeError(id, JSONRPC_INVALID_PARAMS, "Access denied: path outside skill root");
+        }
+        if (!fs::is_regular_file(full, ec)) {
+            return MakeError(id, JSONRPC_INVALID_PARAMS, "Resource not found: " + uri);
+        }
+        std::ifstream f(full, std::ios::binary);
+        std::string content((std::istreambuf_iterator<char>(f)),
+                            std::istreambuf_iterator<char>());
+        bool trunc = false;
+        content = CapHead(std::move(content), trunc);
+        (void)trunc;
+        return MakeResponse(id, {{"contents", nlohmann::json::array({
+            {{"uri", uri}, {"mimeType", "text/plain"}, {"text", content}}
+        })}});
+    }
 
     // Strip file:// prefix
     std::string relPath = uri;

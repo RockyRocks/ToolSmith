@@ -20,6 +20,20 @@
   "skills": {
     "directory": "skills"
   },
+  "plugins": {
+    "directory": "plugins"
+  },
+  "tools": {
+    "profile": "auto",
+    "enable": [],
+    "disable": [],
+    "chaining": false,
+    "lazy_start": true
+  },
+  "workspace": {
+    "root": "auto",
+    "allow": []
+  },
   "discovery": {
     "servers_config": "config/mcp_servers.json"
   }

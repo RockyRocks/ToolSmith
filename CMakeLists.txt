@@ -130,10 +130,14 @@ set(CORE_SOURCES
     src/core/Config.cpp
     src/core/Logger.cpp
     src/core/ThreadPool.cpp
+    src/core/Hashline.cpp
+    src/core/WorkspaceJail.cpp
+    src/core/ToolProfile.cpp
     src/validation/JsonSchemaValidator.cpp
     src/validation/InputSanitizer.cpp
     src/commands/CommandRegistry.cpp
     src/commands/EchoCommand.cpp
+    src/commands/CoreTools.cpp
     src/llm/LiteLLMProvider.cpp
     src/llm/LLMCommand.cpp
     src/discovery/McpServerRegistry.cpp
@@ -142,6 +146,8 @@ set(CORE_SOURCES
     src/skills/SkillCommand.cpp
     src/skills/SkillToolAdapter.cpp
     src/skills/PluginLoader.cpp
+    src/skills/YamlFrontmatter.cpp
+    src/skills/AgentSkillLoader.cpp
     src/plugins/DlPlugin.cpp
     src/plugins/NativePluginAdapter.cpp
     src/plugins/NativePluginLoader.cpp
@@ -272,6 +278,12 @@ set(TEST_SOURCES
     tests/ScriptPluginLoader_test.cpp
     tests/ScriptPlugin_Integration_test.cpp
     tests/StdioMCPAdapter_test.cpp
+    tests/Hashline_test.cpp
+    tests/WorkspaceJail_test.cpp
+    tests/ToolProfile_test.cpp
+    tests/YamlFrontmatter_test.cpp
+    tests/AgentSkillLoader_test.cpp
+    tests/CoreTools_test.cpp
 )
 
 # Desktop notification plugin tests — cross-platform
