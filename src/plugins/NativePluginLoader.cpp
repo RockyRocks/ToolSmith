@@ -1,4 +1,5 @@
 #include <plugins/NativePluginLoader.h>
+#include <plugins/PackManifest.h>
 #include <plugins/DlPlugin.h>
 #include <plugins/NativePluginAdapter.h>
 #include <core/Logger.h>
@@ -27,6 +28,11 @@ bool IsPluginBinary(const fs::path& p) {
 
 NativePluginLoader::~NativePluginLoader() {
     StopWatcher();
+}
+
+void NativePluginLoader::SetActivePacks(std::unordered_set<std::string> packs) {
+    m_ActivePacks = std::move(packs);
+    m_GatePacks = true;
 }
 
 void NativePluginLoader::SetNotifyCallback(
@@ -115,6 +121,14 @@ void NativePluginLoader::LoadAll(const std::string& pluginsDir,
 
     for (const auto& entry : fs::directory_iterator(root, ec)) {
         if (!entry.is_directory()) continue;
+
+        PackManifest manifest = PackManifest::FromDirectory(entry.path());
+        if (m_GatePacks && !manifest.Allowed(m_ActivePacks, true)) {
+            Logger::GetInstance().Log(
+                "[NativePlugin] skip '" + manifest.id + "' (pack not active)");
+            continue;
+        }
+        if (!manifest.OsMatches()) continue;
 
         fs::path binDir = entry.path() / "bin";
         if (!fs::exists(binDir) || !fs::is_directory(binDir)) continue;

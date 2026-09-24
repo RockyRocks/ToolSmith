@@ -18,7 +18,7 @@ It is built around three ideas:
 
 - **One protocol, every LLM.** The server speaks MCP JSON-RPC 2.0 over both HTTP and stdio. Any client that implements the protocol gets access to all registered tools — built-in commands, JSON skills, SKILL.md prompt templates, native C/C++ plugins, and script plugins in Python, Node.js, or C# — without per-model configuration.
 
-- **Extend without recompiling.** The plugin system supports three extension models — script plugins (subprocess per call), native plugins (shared libraries with hot-reload), and skill plugins (Markdown prompt templates) — so new tools can be added at runtime by dropping files into the `plugins/` directory. A background watcher detects new native plugins and pushes `notifications/tools/list_changed` so connected clients refresh automatically.
+- **Lean session, full catalog.** A profile (`auto`, `core`, `cpp`, `csharp`, `fullstack`) advertises a small built-in set. Optional packs (`jira`, `unity`, `unreal`, `github`, skills) stay out of `tools/list` until `activate` or `tools.enable`. `--profile all` loads every pack.
 
 - **Safe by default.** Every request passes through rate limiting, API key validation, input sanitization, and security headers before reaching any tool. Native plugins run inside a fault-isolation wrapper with exception catching, 30-second timeouts, and a circuit breaker. A misbehaving plugin cannot crash the server or block other tools.
 

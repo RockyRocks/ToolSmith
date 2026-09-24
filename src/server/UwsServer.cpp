@@ -23,12 +23,13 @@ void UwsServer::Listen(const std::string& host, int port) {
     for (auto& [method, path, handler] : m_Routes) {
         if (method == "POST") {
             app.post(path, [handler, secHeaders](auto* res, MAYBE_UNUSED auto* req) {
-                res->onData([handler, secHeaders, res](std::string_view data, bool last) {
+                std::string auth = req ? std::string(req->getHeader("authorization")) : "";
+                res->onData([handler, secHeaders, res, auth](std::string_view data, bool last) {
                     if (!last) return;
                     std::string body(data);
-                    std::string clientIp = "0.0.0.0"; // uWS doesn't easily expose this
+                    std::string clientIp = "0.0.0.0";
 
-                    handler(body, clientIp,
+                    handler(body, clientIp, auth,
                             [res, secHeaders](int status, const std::string& response) {
                                 std::string statusStr = std::to_string(status) + " ";
                                 if (status == 200) statusStr += "OK";
@@ -49,7 +50,8 @@ void UwsServer::Listen(const std::string& host, int port) {
             });
         } else if (method == "GET") {
             app.get(path, [handler, secHeaders](auto* res, MAYBE_UNUSED auto* req) {
-                handler("", "0.0.0.0",
+                std::string auth = req ? std::string(req->getHeader("authorization")) : "";
+                handler("", "0.0.0.0", auth,
                         [res, secHeaders](int status, const std::string& response) {
                             (void)status;
                             for (const auto& [k, v] : secHeaders) {

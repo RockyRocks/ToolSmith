@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <memory>
 #include <string>
+#include <validation/JsonSchemaValidator.h>
 
 class ProtocolHandler : public IRequestHandler {
 public:
@@ -30,4 +31,6 @@ private:
     std::shared_ptr<RateLimiter> m_RateLimiter;
     std::shared_ptr<ApiKeyValidator> m_ApiKeyValidator;
     size_t m_MaxBodySize;
+    JsonSchemaValidator m_RequestValidator;
+    JsonSchemaValidator m_ResponseValidator;
 };

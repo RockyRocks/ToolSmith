@@ -3,5 +3,9 @@
   "version": "1.0.0",
   "description": "Read-only Jira integration for viewing issues, searching with JQL, and reading comments. Requires JIRA_BASE_URL, JIRA_USERNAME, and JIRA_API_TOKEN environment variables.",
   "author": { "name": "MCP Server" },
-  "keywords": ["jira", "issues", "jql", "search", "comments", "tickets"]
+  "keywords": ["jira", "issues", "jql", "search", "comments", "tickets"],
+  "id": "jira",
+  "packs": ["jira"],
+  "runtime": "python",
+  "entrypoint": "scripts/jira_tools.py"
 }

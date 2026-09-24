@@ -1,4 +1,6 @@
 #include <plugins/ScriptPluginLoader.h>
+#include <plugins/PackManifest.h>
+#include <core/ThreadPool.h>
 #include <plugins/ScriptPluginAdapter.h>
 #include <plugins/StdioMCPAdapter.h>
 #include <core/Logger.h>
@@ -154,6 +156,11 @@ void ScriptPluginLoader::StopWatcher() {
     }
 }
 
+void ScriptPluginLoader::SetActivePacks(std::unordered_set<std::string> packs) {
+    m_ActivePacks = std::move(packs);
+    m_GatePacks = true;
+}
+
 void ScriptPluginLoader::LoadAll(const std::string& pluginsDir,
                                   CommandRegistry& registry)
 {
@@ -187,6 +194,8 @@ void ScriptPluginLoader::LoadAll(const std::string& pluginsDir,
         if (!entry.is_directory()) continue;
 
         fs::path pluginDir = entry.path();
+        PackManifest manifest = PackManifest::FromDirectory(pluginDir);
+        if (m_GatePacks && !manifest.Allowed(m_ActivePacks, true)) continue;
         fs::path jsonPath  = pluginDir / "plugin.json";
         if (!fs::exists(jsonPath)) continue;
 
@@ -274,12 +283,12 @@ void ScriptPluginLoader::LoadAll(const std::string& pluginsDir,
     for (size_t i = 0; i < descs.size(); ++i) {
         const auto& d = descs[i];
         if (d.isMcpStdio) {
-            futures.push_back(std::async(std::launch::async,
+            futures.push_back(ThreadPool::Shared().Submit(
                 [i, name = d.name, cmd = d.command, args = d.spawnArgs]() -> DiscoveryResult {
                     return {i, StdioMCPAdapter::DiscoverTools(name, cmd, args)};
                 }));
         } else {
-            futures.push_back(std::async(std::launch::async,
+            futures.push_back(ThreadPool::Shared().Submit(
                 [i, name = d.name, runtime = d.runtime, ep = d.entrypoint]() -> DiscoveryResult {
                     return {i, ScriptPluginAdapter::DiscoverTools(name, runtime, ep)};
                 }));

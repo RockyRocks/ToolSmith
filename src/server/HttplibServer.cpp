@@ -22,7 +22,8 @@ void HttplibServer::Listen(const std::string& host, int port) {
             res.set_header("Content-Type", "application/json");
 
             std::string clientIp = req.remote_addr;
-            handler(req.body, clientIp, [&res](int status, const std::string& response) {
+            std::string auth = req.get_header_value("Authorization");
+            handler(req.body, clientIp, auth, [&res](int status, const std::string& response) {
                 res.status = status;
                 res.set_content(response, "application/json");
             });

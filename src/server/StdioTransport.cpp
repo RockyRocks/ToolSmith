@@ -5,6 +5,7 @@
 #include <skills/AgentSkillLoader.h>
 #include <discovery/McpServerRegistry.h>
 #include <core/Env.h>
+#include <core/ThreadPool.h>
 #include <core/Logger.h>
 #include <core/ResultBudget.h>
 
@@ -77,6 +78,7 @@ void StdioTransport::Run() {
 
     m_Running = true;
     std::string line;
+    std::vector<std::future<void>> inFlightCalls;
 
     while (m_Running && std::getline(m_Input, line)) {
         if (line.empty()) {
@@ -107,6 +109,15 @@ void StdioTransport::Run() {
         // Notifications have no "id" field — process but don't respond
         bool isNotification = !message.contains("id");
 
+        const std::string method = message.value("method", "");
+        if (method == "tools/call" && message.contains("id")) {
+            inFlightCalls.push_back(ThreadPool::Shared().Submit([this, message]() {
+                nlohmann::json response = Dispatch(message);
+                if (!response.is_null()) SendMessage(response);
+            }));
+            continue;
+        }
+
         nlohmann::json response = Dispatch(message);
 
         if (!isNotification && !response.is_null()) {
@@ -114,6 +125,7 @@ void StdioTransport::Run() {
         }
     }
 
+    for (auto& call : inFlightCalls) call.wait();
     StopResourceWatcher();
     m_Running = false;
 }
@@ -252,12 +264,12 @@ nlohmann::json StdioTransport::HandleToolsCall(
         arguments["parameters"] = meta.m_DefaultParameters;
     }
 
-    std::string requestId = std::to_string(m_NextRequestId++);
+    std::string requestId = id.is_string() ? id.get<std::string>() : id.dump();
     arguments["_requestId"] = requestId;
 
     {
         std::lock_guard<std::mutex> lock(m_InFlightMutex);
-        m_InFlightRequests[id.dump()] = toolName;
+        m_InFlightRequests[requestId] = toolName;
     }
 
     nlohmann::json internalRequest = {
@@ -270,14 +282,21 @@ nlohmann::json StdioTransport::HandleToolsCall(
 
         {
             std::lock_guard<std::mutex> lock(m_InFlightMutex);
-            m_InFlightRequests.erase(id.dump());
+            m_InFlightRequests.erase(requestId);
         }
 
-        bool isError = result.value("status", "ok") == "error";
-        std::string textContent = result.dump();
+        bool isError = result.value("isError", false)
+                    || result.value("status", "ok") == "error";
+        nlohmann::json textContent;
+        if (result.contains("content") && result["content"].is_string())
+            textContent = result["content"].get<std::string>();
+        else if (result.contains("content") && result["content"].is_array())
+            textContent = result["content"];
+        else
+            textContent = result.dump();
 
         nlohmann::json mcpResult = {
-            {"content", nlohmann::json::array({
+            {"content", textContent.is_array() ? textContent : nlohmann::json::array({
                 {{"type", "text"}, {"text", textContent}}
             })},
             {"isError", isError}
@@ -288,7 +307,7 @@ nlohmann::json StdioTransport::HandleToolsCall(
     } catch (const std::exception& e) {
         {
             std::lock_guard<std::mutex> lock(m_InFlightMutex);
-            m_InFlightRequests.erase(id.dump());
+            m_InFlightRequests.erase(requestId);
         }
         return MakeError(id, JSONRPC_INTERNAL_ERROR, e.what());
     }
@@ -770,7 +789,8 @@ void StdioTransport::StopResourceWatcher() {
 void StdioTransport::HandleCancelNotification(const nlohmann::json& params) {
     if (!params.contains("requestId")) return;
 
-    std::string cancelledId = params["requestId"].dump();
+    const auto& rawId = params["requestId"];
+    std::string cancelledId = rawId.is_string() ? rawId.get<std::string>() : rawId.dump();
     std::string toolName;
     {
         std::lock_guard<std::mutex> lock(m_InFlightMutex);

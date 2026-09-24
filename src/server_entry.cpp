@@ -4,6 +4,7 @@
 #include <core/Version.h>
 #include <core/ProtocolHandler.h>
 #include <core/ThreadPool.h>
+#include <plugins/PackManifest.h>
 #include <core/ToolProfile.h>
 #include <core/WorkspaceJail.h>
 #include <commands/CommandRegistry.h>
@@ -232,14 +233,20 @@ int main(int argc, char** argv) {
     auto nativeLoader = std::make_shared<NativePluginLoader>();
     auto scriptLoader = std::make_shared<ScriptPluginLoader>();
 
-    if (resolved.loadAllPlugins) {
-        try {
-            nativeLoader->LoadAll(config.GetPluginsDirectory(), *commandRegistry);
+    if (!resolved.loadAllPlugins) {
+        std::unordered_set<std::string> packs{resolved.profile, "core"};
+        for (const auto& p : config.GetToolsEnable()) packs.insert(p);
+        nativeLoader->SetActivePacks(packs);
+        scriptLoader->SetActivePacks(packs);
+    }
+
+    try {
+        nativeLoader->LoadAll(config.GetPluginsDirectory(), *commandRegistry);
+        if (resolved.loadAllPlugins || !config.GetToolsEnable().empty())
             scriptLoader->LoadAll(config.GetPluginsDirectory(), *commandRegistry);
-        } catch (const std::exception& e) {
-            std::cerr << e.what() << "\n";
-            return 1;
-        }
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << "\n";
+        return 1;
     }
 
     if (!pinTools.empty()) {
@@ -316,8 +323,9 @@ int main(int argc, char** argv) {
 
     server->AddRoute("POST", "/mcp",
         [protocolHandler](const std::string& body, const std::string& clientIp,
+                           const std::string& authHeader,
                            std::function<void(int, const std::string&)> respond) {
-            auto result = protocolHandler->HandleRequest(body, clientIp);
+            auto result = protocolHandler->HandleRequest(body, clientIp, authHeader);
 
             int status = 200;
             try {
@@ -334,13 +342,13 @@ int main(int argc, char** argv) {
         });
 
     server->AddRoute("GET", "/health",
-        [](const std::string&, const std::string&,
+        [](const std::string&, const std::string&, const std::string&,
            std::function<void(int, const std::string&)> respond) {
             respond(200, R"({"status":"ok"})");
         });
 
     server->AddRoute("GET", "/skills",
-        [commandRegistry](const std::string&, const std::string&,
+        [commandRegistry](const std::string&, const std::string&, const std::string&,
                            std::function<void(int, const std::string&)> respond) {
             nlohmann::json arr = nlohmann::json::array();
             for (const auto& meta : commandRegistry->ListToolMetadata()) {
@@ -355,13 +363,13 @@ int main(int argc, char** argv) {
         });
 
     server->AddRoute("GET", "/servers",
-        [mcpRegistry](const std::string&, const std::string&,
+        [mcpRegistry](const std::string&, const std::string&, const std::string&,
                        std::function<void(int, const std::string&)> respond) {
             respond(200, mcpRegistry->ToJson().dump());
         });
 
     server->AddRoute("GET", "/commands",
-        [commandRegistry](const std::string&, const std::string&,
+        [commandRegistry](const std::string&, const std::string&, const std::string&,
                            std::function<void(int, const std::string&)> respond) {
             nlohmann::json cmds = nlohmann::json::array();
             for (const auto& meta : commandRegistry->ListToolMetadata()) {
