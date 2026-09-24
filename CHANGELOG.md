@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Pack manifests (`packs`, `os`) gate native and script plugins; `jira-tools` is a Python script plugin (`runtime` + `entrypoint`) instead of a command-skill wrapper
+- `ThreadPool::Shared` runs tool calls. Stdio keeps reading during `tools/call`, and `notifications/cancelled` uses the JSON-RPC id. HTTP forwards `Authorization`
+- Native core tools (`read`, `edit`, `search`, `shell`, `project`, `git`, `build`, `test`, `diagnose`, `catalog`, `activate`, `deactivate`) with hashline edits, workspace jail, and 32 KiB result caps
+- Profile detection (`auto|core|cpp|csharp|fullstack|all`) and `--tools` pin list so a C++ session advertises ≤ 12 tools
+- Agent Skills discovery for `.agents/skills/` and `.toolsmith/skills/` (project then user) with an agentskills.io YAML frontmatter parser
+- `skills` / `skill` tools (and `skill://` resources) behind the opt-in `skills` pack
+
+### Changed
+- `tools/list` is the advertised set only; collisions fail closed; chaining defaults off
+- `echo` is hidden; command-skill rules are no longer dumped into tool descriptions
+- SKILL.md parser keeps unquoted colons in `description` and nested `metadata` maps
+
+### Fixed
+- Duplicate tool names no longer silently overwrite the first registration
+
 ## [1.0.0] — 2026-05-06
 
 ### Added

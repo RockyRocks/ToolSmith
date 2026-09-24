@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 cmake_policy(SET CMP0077 NEW)
+if(POLICY CMP0135)
+  cmake_policy(SET CMP0135 NEW)
+endif()
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 project(ToolSmith VERSION 1.0.0 LANGUAGES CXX)
 
@@ -27,6 +30,8 @@ include(CMakeFindDependencyMacro)
 # ------------------------------------------------------------------------------
 # json-schema-validator
 # ------------------------------------------------------------------------------
+set(JSON_VALIDATOR_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(JSON_VALIDATOR_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
   jsv
   GIT_REPOSITORY https://github.com/pboettch/json-schema-validator.git
@@ -99,6 +104,9 @@ endif()
 # googletest / catch2
 # ------------------------------------------------------------------------------
 if(TEST_FRAMEWORK STREQUAL "GTest")
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+  set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
   FetchContent_Declare(
     googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
@@ -117,7 +125,8 @@ endif()
 # Compiler options
 # ------------------------------------------------------------------------------
 if(MSVC)
-  add_compile_options(/W4 /WX /permissive-)
+  add_compile_options(/W4 /WX /permissive- /utf-8)
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS NOMINMAX)
 else()
   add_compile_options(-Wall -Wextra -Wpedantic -Werror -fdiagnostics-color=always -pipe)
 endif()
@@ -130,10 +139,14 @@ set(CORE_SOURCES
     src/core/Config.cpp
     src/core/Logger.cpp
     src/core/ThreadPool.cpp
+    src/core/Hashline.cpp
+    src/core/WorkspaceJail.cpp
+    src/core/ToolProfile.cpp
     src/validation/JsonSchemaValidator.cpp
     src/validation/InputSanitizer.cpp
     src/commands/CommandRegistry.cpp
     src/commands/EchoCommand.cpp
+    src/commands/CoreTools.cpp
     src/llm/LiteLLMProvider.cpp
     src/llm/LLMCommand.cpp
     src/discovery/McpServerRegistry.cpp
@@ -142,6 +155,8 @@ set(CORE_SOURCES
     src/skills/SkillCommand.cpp
     src/skills/SkillToolAdapter.cpp
     src/skills/PluginLoader.cpp
+    src/skills/YamlFrontmatter.cpp
+    src/skills/AgentSkillLoader.cpp
     src/plugins/DlPlugin.cpp
     src/plugins/NativePluginAdapter.cpp
     src/plugins/NativePluginLoader.cpp
@@ -169,7 +184,13 @@ target_include_directories(core PUBLIC
   ${PROJECT_SOURCE_DIR}/include
   "${CMAKE_BINARY_DIR}/generated"
 )
-target_include_directories(core PRIVATE ${subprocess_h_SOURCE_DIR})
+# SYSTEM: vendor headers (macOS 26 deprecates posix_spawn_file_actions_addchdir_np
+# inside subprocess.h; -Werror must not fire on that).
+target_include_directories(core SYSTEM PRIVATE ${subprocess_h_SOURCE_DIR})
+if(NOT MSVC)
+  set_source_files_properties(src/plugins/SubprocessPipe.cpp PROPERTIES
+    COMPILE_FLAGS "-Wno-deprecated-declarations -Wno-unused-function -Wno-pedantic")
+endif()
 target_link_libraries(core PUBLIC
   nlohmann_json::nlohmann_json
   nlohmann_json_schema_validator
@@ -272,6 +293,13 @@ set(TEST_SOURCES
     tests/ScriptPluginLoader_test.cpp
     tests/ScriptPlugin_Integration_test.cpp
     tests/StdioMCPAdapter_test.cpp
+    tests/Hashline_test.cpp
+    tests/WorkspaceJail_test.cpp
+    tests/ToolProfile_test.cpp
+    tests/YamlFrontmatter_test.cpp
+    tests/AgentSkillLoader_test.cpp
+    tests/CoreTools_test.cpp
+    tests/Env_test.cpp
 )
 
 # Desktop notification plugin tests — cross-platform

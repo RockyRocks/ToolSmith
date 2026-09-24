@@ -20,6 +20,11 @@ ThreadPool::ThreadPool(size_t n) {
     }
 }
 
+ThreadPool& ThreadPool::Shared(size_t n) {
+    static ThreadPool pool(n == 0 ? std::thread::hardware_concurrency() : n);
+    return pool;
+}
+
 ThreadPool::~ThreadPool() { Shutdown(); }
 
 void ThreadPool::Shutdown() {
@@ -32,17 +37,3 @@ void ThreadPool::Shutdown() {
         if (t.joinable()) t.join();
 }
 
-template<typename F, typename... Args>
-auto ThreadPool::Submit(F&& f, Args&&... args) -> std::future<decltype(f(args...))> {
-    using R = decltype(f(args...));
-    auto task = std::make_shared<std::packaged_task<R()>>(
-        std::bind(std::forward<F>(f), std::forward<Args>(args)...));
-    std::future<R> res = task->get_future();
-    {
-        std::unique_lock<std::mutex> lock(m_Mtx);
-        if (m_Stopping) throw std::runtime_error("submit on stopped ThreadPool");
-        m_Tasks.emplace([task]() { (*task)(); });
-    }
-    m_Cv.notify_one();
-    return res;
-}

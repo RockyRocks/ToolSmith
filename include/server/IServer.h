@@ -5,6 +5,7 @@
 using RouteHandler = std::function<void(
     const std::string& body,
     const std::string& clientIp,
+    const std::string& authHeader,
     std::function<void(int status, const std::string& response)> respond)>;
 
 class IServer {

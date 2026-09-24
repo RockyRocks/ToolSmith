@@ -10,6 +10,7 @@
   "mcp_plugin": true,
   "binary": "bin/desktop-notification.dll",
   "platforms": ["win32", "linux", "darwin"],
+  "packs": ["desktop-notify"],
 
   "_comment_claude": "--- Claude Code marketplace fields (used by claude /plugin enable) ---",
   "hooks": "hooks/hooks.json",

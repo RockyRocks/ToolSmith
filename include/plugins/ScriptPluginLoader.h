@@ -7,6 +7,7 @@
 #include <thread>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <unordered_set>
 
 class ScriptPluginLoader {
 public:
@@ -20,6 +21,9 @@ public:
 
     void LoadAll(const std::string& pluginsDir, CommandRegistry& registry);
 
+    /// When set, only plugin.json packs in this set are discovered.
+    void SetActivePacks(std::unordered_set<std::string> packs);
+
     void SetNotifyCallback(std::function<void(const nlohmann::json&)> cb);
 
     void StartWatcher(const std::string& pluginsDir,
@@ -30,6 +34,8 @@ public:
 private:
     void FireNotification(const nlohmann::json& payload);
 
+    std::unordered_set<std::string>            m_ActivePacks;
+    bool                                       m_GatePacks = false;
     std::function<void(const nlohmann::json&)> m_NotifyCallback;
     std::mutex                                 m_NotifyMutex;
 

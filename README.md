@@ -18,7 +18,7 @@ It is built around three ideas:
 
 - **One protocol, every LLM.** The server speaks MCP JSON-RPC 2.0 over both HTTP and stdio. Any client that implements the protocol gets access to all registered tools — built-in commands, JSON skills, SKILL.md prompt templates, native C/C++ plugins, and script plugins in Python, Node.js, or C# — without per-model configuration.
 
-- **Extend without recompiling.** The plugin system supports three extension models — script plugins (subprocess per call), native plugins (shared libraries with hot-reload), and skill plugins (Markdown prompt templates) — so new tools can be added at runtime by dropping files into the `plugins/` directory. A background watcher detects new native plugins and pushes `notifications/tools/list_changed` so connected clients refresh automatically.
+- **Lean session, full catalog.** A profile (`auto`, `core`, `cpp`, `csharp`, `fullstack`) advertises a small built-in set. Optional packs (`jira`, `unity`, `unreal`, `github`, skills) stay out of `tools/list` until `activate` or `tools.enable`. `--profile all` loads every pack.
 
 - **Safe by default.** Every request passes through rate limiting, API key validation, input sanitization, and security headers before reaching any tool. Native plugins run inside a fault-isolation wrapper with exception catching, 30-second timeouts, and a circuit breaker. A misbehaving plugin cannot crash the server or block other tools.
 
@@ -30,12 +30,22 @@ The server integrates directly with [Claude Code](https://claude.ai/code) as a r
 
 ### MCP Tools
 
+Default `--profile auto` (CMake/C# tree → `cpp`/`csharp`/`fullstack`) advertises a small native set (≤ 12 tools):
+
 | Tool | Description |
 | ---- | ----------- |
-| `echo` | Simple echo for connectivity testing |
-| `llm` | LLM completion via a LiteLLM proxy (multi-provider: OpenAI, Anthropic, etc.) |
-| `skill` | Prompt-template engine — loads JSON skill definitions with `{{variable}}` interpolation |
-| `remote` | Composite command that delegates calls to other registered MCP servers |
+| `read` | File as `LINE\|HASH\|text` (default 200 lines, cap 500) |
+| `edit` | Hashline hunks; stale hashes write nothing |
+| `search` | Workspace-jailed `path:line:` snippets |
+| `shell` | One foreground command in the jail (30s default) |
+| `project` | Compact language/toolchain snapshot |
+| `git` | Read-only status/diff/log/blame/conflicts (language profiles) |
+| `build` / `test` / `diagnose` | Compact compiler/test output (language profiles) |
+| `catalog` / `activate` / `deactivate` | Opt-in packs (`skills`, `llm`, `jira`, …) |
+
+`echo`, `llm`, `remote`, JSON skills, and script plugins are **not** in the default advertised set. Use `--profile all` for the previous full list, or `catalog` + `activate`. Agent Skills live under `.agents/skills/<name>/SKILL.md` ([spec](https://agentskills.io/specification)).
+
+CLI: `--stdio --profile cpp --tools read,edit,search --workspace PATH`. Env: `TOOLSMITH_PROFILE`, `TOOLSMITH_TOOLS`, `TOOLSMITH_WORKSPACE`.
 
 ### Dual Transport
 

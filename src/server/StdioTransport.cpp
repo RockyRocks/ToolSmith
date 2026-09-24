@@ -1,12 +1,18 @@
 #include <server/StdioTransport.h>
 #include <commands/CommandRegistry.h>
+#include <commands/CoreTools.h>
 #include <skills/SkillEngine.h>
+#include <skills/AgentSkillLoader.h>
 #include <discovery/McpServerRegistry.h>
+#include <core/Env.h>
+#include <core/ThreadPool.h>
 #include <core/Logger.h>
+#include <core/ResultBudget.h>
 
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <thread>
 
@@ -44,6 +50,13 @@ StdioTransport::StdioTransport(
     m_ResourceRoot = std::filesystem::current_path(ec).string();
 }
 
+void StdioTransport::SetCoreRuntime(std::shared_ptr<CoreRuntime> runtime) {
+    m_CoreRuntime = std::move(runtime);
+    if (m_CoreRuntime) {
+        m_ResourceRoot = m_CoreRuntime->jail.Root().string();
+    }
+}
+
 void StdioTransport::Run() {
 #ifdef _WIN32
     // Set binary mode on stdin/stdout to avoid \r\n corruption
@@ -65,6 +78,7 @@ void StdioTransport::Run() {
 
     m_Running = true;
     std::string line;
+    std::vector<std::future<void>> inFlightCalls;
 
     while (m_Running && std::getline(m_Input, line)) {
         if (line.empty()) {
@@ -95,6 +109,15 @@ void StdioTransport::Run() {
         // Notifications have no "id" field — process but don't respond
         bool isNotification = !message.contains("id");
 
+        const std::string method = message.value("method", "");
+        if (method == "tools/call" && message.contains("id")) {
+            inFlightCalls.push_back(ThreadPool::Shared().Submit([this, message]() {
+                nlohmann::json response = Dispatch(message);
+                if (!response.is_null()) SendMessage(response);
+            }));
+            continue;
+        }
+
         nlohmann::json response = Dispatch(message);
 
         if (!isNotification && !response.is_null()) {
@@ -102,6 +125,7 @@ void StdioTransport::Run() {
         }
     }
 
+    for (auto& call : inFlightCalls) call.wait();
     StopResourceWatcher();
     m_Running = false;
 }
@@ -178,7 +202,7 @@ nlohmann::json StdioTransport::HandleInitialize(
     nlohmann::json result = {
         {"protocolVersion", MCP_PROTOCOL_VERSION},
         {"capabilities", {
-            {"tools", nlohmann::json::object()},
+            {"tools", {{"listChanged", true}}},
             {"prompts", nlohmann::json::object()},
             {"resources", {{"subscribe", true}}}
         }},
@@ -203,7 +227,13 @@ nlohmann::json StdioTransport::HandleToolsList(const nlohmann::json& id) {
         });
     }
 
-    return MakeResponse(id, {{"tools", toolsArray}});
+    nlohmann::json resp = MakeResponse(id, {{"tools", toolsArray}});
+    const std::string metrics = GetEnvVar("TOOLSMITH_METRICS");
+    if (!metrics.empty() && metrics[0] == '1') {
+        const std::string dumped = resp.dump();
+        Logger::GetInstance().Log("tools_list_bytes=" + std::to_string(dumped.size()));
+    }
+    return resp;
 }
 
 nlohmann::json StdioTransport::HandleToolsCall(
@@ -234,12 +264,12 @@ nlohmann::json StdioTransport::HandleToolsCall(
         arguments["parameters"] = meta.m_DefaultParameters;
     }
 
-    std::string requestId = std::to_string(m_NextRequestId++);
+    std::string requestId = id.is_string() ? id.get<std::string>() : id.dump();
     arguments["_requestId"] = requestId;
 
     {
         std::lock_guard<std::mutex> lock(m_InFlightMutex);
-        m_InFlightRequests[id.dump()] = toolName;
+        m_InFlightRequests[requestId] = toolName;
     }
 
     nlohmann::json internalRequest = {
@@ -252,14 +282,21 @@ nlohmann::json StdioTransport::HandleToolsCall(
 
         {
             std::lock_guard<std::mutex> lock(m_InFlightMutex);
-            m_InFlightRequests.erase(id.dump());
+            m_InFlightRequests.erase(requestId);
         }
 
-        bool isError = result.value("status", "ok") == "error";
-        std::string textContent = result.dump();
+        bool isError = result.value("isError", false)
+                    || result.value("status", "ok") == "error";
+        nlohmann::json textContent;
+        if (result.contains("content") && result["content"].is_string())
+            textContent = result["content"].get<std::string>();
+        else if (result.contains("content") && result["content"].is_array())
+            textContent = result["content"];
+        else
+            textContent = result.dump();
 
         nlohmann::json mcpResult = {
-            {"content", nlohmann::json::array({
+            {"content", textContent.is_array() ? textContent : nlohmann::json::array({
                 {{"type", "text"}, {"text", textContent}}
             })},
             {"isError", isError}
@@ -270,7 +307,7 @@ nlohmann::json StdioTransport::HandleToolsCall(
     } catch (const std::exception& e) {
         {
             std::lock_guard<std::mutex> lock(m_InFlightMutex);
-            m_InFlightRequests.erase(id.dump());
+            m_InFlightRequests.erase(requestId);
         }
         return MakeError(id, JSONRPC_INTERNAL_ERROR, e.what());
     }
@@ -466,6 +503,17 @@ nlohmann::json StdioTransport::HandleResourcesList(
     namespace fs = std::filesystem;
     nlohmann::json resources = nlohmann::json::array();
 
+    if (m_CoreRuntime && m_Registry && m_Registry->IsAdvertised("skills")) {
+        for (const auto& skill : m_CoreRuntime->skills.skills) {
+            resources.push_back({
+                {"uri", "skill://" + skill.m_Name},
+                {"name", skill.m_Name},
+                {"description", skill.m_Description},
+                {"mimeType", "text/markdown"}
+            });
+        }
+    }
+
     if (m_ResourceRoot.empty()) {
         return MakeResponse(id, {{"resources", resources}});
     }
@@ -511,6 +559,58 @@ nlohmann::json StdioTransport::HandleResourcesRead(
     }
 
     std::string uri = params["uri"].get<std::string>();
+
+    if (uri.rfind("skill://", 0) == 0) {
+        if (!m_CoreRuntime || !m_Registry || !m_Registry->IsAdvertised("skills")) {
+            return MakeError(id, JSONRPC_INVALID_PARAMS,
+                             "skills pack is not advertised; call activate pack=skills");
+        }
+        std::string rest = uri.substr(8);
+        auto slash = rest.find('/');
+        std::string name = slash == std::string::npos ? rest : rest.substr(0, slash);
+        std::string rel = slash == std::string::npos ? "" : rest.substr(slash + 1);
+        if (rel.empty()) {
+            auto body = LoadAgentSkillBody(m_CoreRuntime->skills, name);
+            if (!body.error.empty()) {
+                return MakeError(id, JSONRPC_INVALID_PARAMS, body.error);
+            }
+            bool trunc = false;
+            std::string text = CapHead(body.body, trunc);
+            (void)trunc;
+            return MakeResponse(id, {{"contents", nlohmann::json::array({
+                {{"uri", uri}, {"mimeType", "text/markdown"}, {"text", text}}
+            })}});
+        }
+        namespace fs = std::filesystem;
+        fs::path skillRoot;
+        for (const auto& s : m_CoreRuntime->skills.skills) {
+            if (s.m_Name == name) { skillRoot = s.m_Root; break; }
+        }
+        if (skillRoot.empty()) {
+            return MakeError(id, JSONRPC_INVALID_PARAMS, "Unknown skill: " + name);
+        }
+        std::error_code ec;
+        fs::path full = fs::weakly_canonical(skillRoot / rel, ec);
+        fs::path root = fs::weakly_canonical(skillRoot, ec);
+        auto relative = full.lexically_relative(root);
+        bool outside = relative.empty();
+        for (const auto& part : relative) if (part == "..") outside = true;
+        if (outside) {
+            return MakeError(id, JSONRPC_INVALID_PARAMS, "Access denied: path outside skill root");
+        }
+        if (!fs::is_regular_file(full, ec)) {
+            return MakeError(id, JSONRPC_INVALID_PARAMS, "Resource not found: " + uri);
+        }
+        std::ifstream f(full, std::ios::binary);
+        std::string content((std::istreambuf_iterator<char>(f)),
+                            std::istreambuf_iterator<char>());
+        bool trunc = false;
+        content = CapHead(std::move(content), trunc);
+        (void)trunc;
+        return MakeResponse(id, {{"contents", nlohmann::json::array({
+            {{"uri", uri}, {"mimeType", "text/plain"}, {"text", content}}
+        })}});
+    }
 
     // Strip file:// prefix
     std::string relPath = uri;
@@ -689,7 +789,8 @@ void StdioTransport::StopResourceWatcher() {
 void StdioTransport::HandleCancelNotification(const nlohmann::json& params) {
     if (!params.contains("requestId")) return;
 
-    std::string cancelledId = params["requestId"].dump();
+    const auto& rawId = params["requestId"];
+    std::string cancelledId = rawId.is_string() ? rawId.get<std::string>() : rawId.dump();
     std::string toolName;
     {
         std::lock_guard<std::mutex> lock(m_InFlightMutex);
