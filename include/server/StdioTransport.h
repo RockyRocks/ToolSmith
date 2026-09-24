@@ -98,7 +98,6 @@ private:
 
     std::mutex m_InFlightMutex;
     std::map<std::string, std::string> m_InFlightRequests;
-    uint64_t m_NextRequestId{1};
 
     std::mutex m_SubscriptionMutex;
     std::set<std::string> m_SubscribedUris;
