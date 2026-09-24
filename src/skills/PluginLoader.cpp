@@ -1,4 +1,5 @@
 #include <skills/PluginLoader.h>
+#include <plugins/PackManifest.h>
 #include <skills/YamlFrontmatter.h>
 #include <core/Logger.h>
 #include <fstream>
@@ -71,6 +72,8 @@ std::vector<std::string> PluginLoader::LoadIntoEngine(const std::string& plugins
         if (!pluginEntry.is_directory()) continue;
 
         fs::path pluginDir = pluginEntry.path();
+        PackManifest manifest = PackManifest::FromDirectory(pluginDir);
+        const bool scriptPack = !manifest.runtime.empty();
         fs::path skillsDir = pluginDir / "skills";
 
         if (!fs::exists(skillsDir) || !fs::is_directory(skillsDir)) continue;
@@ -86,6 +89,12 @@ std::vector<std::string> PluginLoader::LoadIntoEngine(const std::string& plugins
             try {
                 std::string content = ReadFile(skillMdPath);
                 SkillDefinition skill = ParseSkillMd(content, fallbackName, pluginDir.string());
+                if (scriptPack && skill.m_Type == SkillType::Command) {
+                    Logger::GetInstance().Log(
+                        "Skip command skill '" + skill.m_Name
+                        + "' (plugin has a script runtime)");
+                    continue;
+                }
                 engine.LoadSkill(skill);
                 loadedNames.push_back(skill.m_Name);
                 Logger::GetInstance().Log("Loaded plugin skill: " + skill.m_Name

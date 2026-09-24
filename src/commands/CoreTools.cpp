@@ -11,6 +11,9 @@
 #include <chrono>
 #include <fstream>
 #include <future>
+#include <functional>
+#include <mutex>
+#include <set>
 #include <sstream>
 #include <thread>
 
@@ -101,7 +104,8 @@ void AppendLines(SubprocessPipe& proc, std::string& output, int waitMs) {
 }
 
 ProcResult RunProc(const std::string& exe, const std::vector<std::string>& args,
-                   int timeoutSec, const std::string& cwd = {}) {
+                   int timeoutSec, const std::string& cwd = {},
+                   const std::function<bool()>& cancelled = {}) {
     ProcResult r;
     std::unique_ptr<SubprocessPipe> proc;
     try {
@@ -117,6 +121,12 @@ ProcResult RunProc(const std::string& exe, const std::vector<std::string>& args,
         const size_t before = r.output.size();
         AppendLines(*proc, r.output, 200);
         if (r.output.size() > kMaxResultBytes * 4) break;
+        if (cancelled && cancelled()) {
+            proc->Kill();
+            r.timedOut = true;
+            r.output += "\ncancelled\n";
+            break;
+        }
         if (!proc->IsRunning()) break;
         if (r.output.size() == before)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -349,6 +359,11 @@ public:
                 {"required", nlohmann::json::array({"command"})}
             }, std::move(rt)) {}
 
+    void Cancel(const std::string& requestId) override {
+        std::lock_guard<std::mutex> lock(m_CancelMx);
+        m_Cancelled.insert(requestId);
+    }
+
     std::future<nlohmann::json> ExecuteAsync(const nlohmann::json& request) override {
         auto p = Payload(request);
         std::string command = p.value("command", "");
@@ -359,16 +374,25 @@ public:
         int timeout = ClampInt(p.value("timeout", kShellTimeoutDefaultSec), 1,
                                kShellTimeoutMaxSec, kShellTimeoutDefaultSec);
         const std::string cwd = PathUtf8(resolved.path);
+        const std::string requestId = p.value("_requestId", "");
+        auto cancelled = [this, requestId]() {
+            if (requestId.empty()) return false;
+            std::lock_guard<std::mutex> lock(m_CancelMx);
+            return m_Cancelled.count(requestId) > 0;
+        };
 #ifdef _WIN32
-        // cwd is passed to CreateProcess. Do not wrap `cd /d ... &&` — subprocess.h
-        // re-quotes args with spaces and cmd.exe then strips quotes incorrectly.
-        auto proc = RunProc("cmd.exe", {"/s", "/c", command}, timeout, cwd);
+        auto proc = RunProc("cmd.exe", {"/s", "/c", command}, timeout, cwd, cancelled);
 #else
-        auto proc = RunProc("/bin/sh", {"-c", command}, timeout, cwd);
+        auto proc = RunProc("/bin/sh", {"-c", command}, timeout, cwd, cancelled);
 #endif
         if (!proc.started) return Ready(Err("Failed to start shell: " + proc.output));
         bool trunc = false;
         std::string body = CapTail(proc.output, trunc);
+        if (proc.output.find("cancelled") != std::string::npos) {
+            auto r = Err("Command cancelled");
+            r["content"] = body;
+            return Ready(std::move(r));
+        }
         if (proc.timedOut) {
             auto r = Err("Command timed out after " + std::to_string(timeout) + "s");
             r["content"] = body;
@@ -380,6 +404,10 @@ public:
         r["exit_code"] = 0;
         return Ready(std::move(r));
     }
+
+private:
+    std::mutex m_CancelMx;
+    std::set<std::string> m_Cancelled;
 };
 
 class ProjectCommand : public CoreCommand {
@@ -508,7 +536,15 @@ public:
         std::error_code ec;
         for (fs::directory_iterator it(root, ec); it != fs::directory_iterator() && !ec; ++it) {
             auto ext = it->path().extension().string();
-            if (ext == ".sln" || ext == ".csproj") {
+            if (ext == ".sln" || ext == ".vcxproj") {
+                auto proc = RunProc("msbuild", {it->path().string(), "/nologo", "/v:m"}, 60);
+                if (!proc.started)
+                    proc = RunProc("dotnet", {"build", it->path().string(), "--nologo", "-v:q"}, 60);
+                if (!proc.started) return Ready(Err("msbuild/dotnet not available on PATH"));
+                bool trunc = false;
+                return Ready(Ok(CapTail(proc.output, trunc), trunc));
+            }
+            if (ext == ".csproj") {
                 auto proc = RunProc("dotnet", {"build", it->path().string(),
                                               "--nologo", "-v:q"}, 60);
                 if (!proc.started) return Ready(Err("dotnet not available on PATH"));

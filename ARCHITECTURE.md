@@ -26,7 +26,7 @@ graph TD
 
     subgraph Core
         PH[Protocol Handler]
-        CR[Command Registry<br/>unified flat tool list]
+        CR[Command Registry<br/>installed vs advertised]
     end
 
     subgraph Built-in Commands

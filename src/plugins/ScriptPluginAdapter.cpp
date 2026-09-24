@@ -274,7 +274,7 @@ std::future<nlohmann::json> ScriptPluginAdapter::ExecuteAsync(const nlohmann::js
     std::string requestId = request.value("_requestId", "");
     auto cancelState = m_CancelState;
 
-    return std::async(std::launch::async, [runtime, entrypoint, toolName, request,
+    return std::async(std::launch::deferred, [runtime, entrypoint, toolName, request,
                                            requestId, cancelState]()
         -> nlohmann::json
     {

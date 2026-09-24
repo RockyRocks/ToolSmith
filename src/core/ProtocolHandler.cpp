@@ -29,7 +29,9 @@ ProtocolHandler::ProtocolHandler(std::shared_ptr<CommandRegistry> registry,
     : m_Registry(std::move(registry))
     , m_RateLimiter(std::move(rateLimiter))
     , m_ApiKeyValidator(std::move(apiKeyValidator))
-    , m_MaxBodySize(maxBodySize) {}
+    , m_MaxBodySize(maxBodySize)
+    , m_RequestValidator(requestSchema)
+    , m_ResponseValidator(responseSchema) {}
 
 nlohmann::json ProtocolHandler::Handle(const nlohmann::json& request) {
     if (!ValidateRequest(request)) {
@@ -90,18 +92,18 @@ std::string ProtocolHandler::HandleRequest(const std::string& body,
 }
 
 bool ProtocolHandler::ValidateRequest(const nlohmann::json& req) {
-    JsonSchemaValidator v(requestSchema);
-    if (!v.Validate(req)) {
-        Logger::GetInstance().Log(std::string("Request validation failed: ") + v.GetErrorMessage());
+    if (!m_RequestValidator.Validate(req)) {
+        Logger::GetInstance().Log(std::string("Request validation failed: ")
+                                  + m_RequestValidator.GetErrorMessage());
         return false;
     }
     return true;
 }
 
 std::string ProtocolHandler::CreateResponse(const nlohmann::json& data) {
-    JsonSchemaValidator v(responseSchema);
-    if (!v.Validate(data)) {
-        Logger::GetInstance().Log(std::string("Response validation failed: ") + v.GetErrorMessage());
+    if (!m_ResponseValidator.Validate(data)) {
+        Logger::GetInstance().Log(std::string("Response validation failed: ")
+                                  + m_ResponseValidator.GetErrorMessage());
         return R"({"status":"error","error":"Invalid response"})";
     }
     return data.dump();
